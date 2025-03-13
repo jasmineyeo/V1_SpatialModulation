@@ -1,26 +1,31 @@
 # V1_SpatialModulation/
-# ├── main.py
 # ├── helper/
 #     ├── __init__.py
-#     ├── subroutine.py
-#     ├── suite2p2data_JSYEdit.py
-#     ├── Multi_Naturalmovie_code_cohensd_suite2p.py
 #     ├── read_xml.py
 #     ├── time2float.py    
 #     ├── twop.py
+#     ├── SpikeSmoothing.py
+#     ├── spatial_discretization.py
+#     ├── ReliabilityTesting.py
+#     ├── ResponseVisualization.py
+#     ├── BehavioralDataFiltering.py
 
 # Import functions
-from .subroutine import subroutine_find_corr, subroutine_test_r
-from .suite2p2data_JSYEdit import suite2p2data_JSYEdit
-from .Multi_Naturalmovie_code_cohensd_suite2p import multi_naturalmovie_code_cohensd_suite2p
 from .read_xml import read_xml
 from .time2float import time2float
 from .twop import TwoP
+from .SpikeSmoothing import smooth_spikes, plot_comparison, plot_sample_cells, spatial_smooth
+from .BehavioralDataFiltering import reshape_into_laps, process_data_with_trial_filtering
+from .spatial_discretization import spatial_assignment
+from .ReliabilityTesting import test_cell_reliability, normalize_spatial_activity, plot_reliable_cells_side_by_side, plot_reliable_cells_grid, plot_reliable_cells_waterfall 
+from .ResponseVisualization import create_response_plot, create_waterfall_plot
 
 # Specify what is available when you import the package
-__all__ = ["subroutine_find_corr", "subroutine_test_r", 
-           "suite2p2data_JSYEdit", 
-           "multi_naturalmovie_code_cohensd_suite2p",
-           "read_xml",
+__all__ = ["read_xml",
            "time2float",
-           "TwoP"]
+           "TwoP",
+           "smooth_spikes", "plot_comparison", "plot_sample_cells", "spatial_smooth",
+           "reshape_into_laps", "process_data_with_trial_filtering",
+           "spatial_assignment",
+           "test_cell_reliability", "normalize_spatial_activity", "plot_reliable_cells_side_by_side", "plot_reliable_cells_grid","plot_reliable_cells_waterfall",
+           "create_response_plot", "create_waterfall_plot"]

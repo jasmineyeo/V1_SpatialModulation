@@ -5,19 +5,11 @@ Two-photon imaging data analysis class
 DMM, 2024
 """
 
-
 import os
 import json
 import numpy as np
-import pandas as pd
-import matplotlib.pyplot as plt
-from tqdm import tqdm
 import scipy.stats
-
-# import oasis
-
-# import fm2p
-
+import oasis
 
 class TwoP():
 
@@ -97,9 +89,9 @@ class TwoP():
             norm_dFF[c,:] = (_normF - _f0_norm) / _f0_norm * 100
 
             # below lines (99-101) commented out because oasis package could not be installed (JSY - 02/03/2025)
-            # # deconvolved spiking activity and denoised fluorescence signal
-            # g = oasis.functions.estimate_time_constant(norm_dFF[c,:].copy(), 1)
-            # denoised_dFF[c,:], sps[c,:] = oasis.oasisAR1(norm_dFF[c,:].copy(), g)
+            # deconvolved spiking activity and denoised fluorescence signal
+            g = oasis.functions.estimate_time_constant(norm_dFF[c,:].copy(), 1)
+            denoised_dFF[c,:], sps[c,:] = oasis.oasisAR1(norm_dFF[c,:].copy(), g)
 
             norm_F[c,:] = _normF
             raw_dFF[c,:] = _raw_dFF
