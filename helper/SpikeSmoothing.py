@@ -2,6 +2,32 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d
 import matplotlib.pyplot as plt
 
+def apply_temporal_offset(spike_data, offset_frames):
+    """
+    Apply a temporal offset to spike data relative to location data.
+    Positive offset means neural activity shifted forward in time (appears later relative to location).
+    Negative offset means neural activity shifted backward in time (appears earlier relative to location).
+    """
+    n_cells, n_frames = spike_data.shape
+    
+    if offset_frames == 0:
+        return spike_data
+    
+    # Create new arrays to hold offset data
+    offset_spike_data = np.zeros_like(spike_data)
+    
+    if offset_frames > 0:
+        # Positive offset: spikes shifted forward (later) relative to location
+        # Keep later part of spikes
+        offset_spike_data[:, offset_frames:] = spike_data[:, :-offset_frames]
+    else:
+        # Negative offset: spikes shifted backward (earlier) relative to location
+        # Keep earlier part of spikes
+        abs_offset = abs(offset_frames)
+        offset_spike_data[:, :-abs_offset] = spike_data[:, abs_offset:]
+    
+    return offset_spike_data
+
 def smooth_spikes(spike_data, fps=10, window_ms=250):
     """
     Smooth spike data using a Gaussian window.

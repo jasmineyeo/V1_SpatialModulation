@@ -32,9 +32,9 @@ def reshape_into_laps(spks, location, high_percentile=90, low_percentile=10, plo
     threshold_high = np.percentile(location, high_percentile)
     threshold_low = np.percentile(location, low_percentile)
     
-    print(f"Location range: {np.min(location):.2f} to {np.max(location):.2f}")
-    print(f"Using high threshold: {threshold_high:.2f} (at {high_percentile}th percentile)")
-    print(f"Using low threshold: {threshold_low:.2f} (at {low_percentile}th percentile)")
+    # print(f"Location range: {np.min(location):.2f} to {np.max(location):.2f}")
+    # print(f"Using high threshold: {threshold_high:.2f} (at {high_percentile}th percentile)")
+    # print(f"Using low threshold: {threshold_low:.2f} (at {low_percentile}th percentile)")
     
     # Find the first minimum in the data
     first_min_indices = np.where(location < threshold_low)[0]
@@ -86,8 +86,8 @@ def reshape_into_laps(spks, location, high_percentile=90, low_percentile=10, plo
     lap_lengths = lap_ends - lap_starts
     n_laps = len(lap_starts)
     
-    print(f"Found {n_laps} laps")
-    print(f"Lap lengths: {lap_lengths}")
+    # print(f"Found {n_laps} laps")
+    # print(f"Lap lengths: {lap_lengths}")
     
     # Plot lap detection for verification
     if plot_detection:
@@ -110,7 +110,7 @@ def reshape_into_laps(spks, location, high_percentile=90, low_percentile=10, plo
         plt.xlabel('Time')
         plt.ylabel('Location')
         plt.legend()
-        plt.show()
+        # plt.show()
     
     # Create lists to store data for each lap
     spks_laps = []

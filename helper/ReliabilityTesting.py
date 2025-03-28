@@ -3,7 +3,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
 
-
 def test_cell_reliability(spatial_activity, n_shuffles=1000, 
                          cc_percentile=95, cohen_threshold=0.5,
                          min_cc_threshold=0.2, min_activity_threshold=0.1):
@@ -107,6 +106,274 @@ def test_cell_reliability(spatial_activity, n_shuffles=1000,
             reliable_cells[cell] = True
             
     return reliable_cells, average_cc, cohen_d, iterated_cc, normalized_activity
+
+
+def test_cell_reliability_with_edge_visualization(spatial_activity, n_shuffles=1000, 
+                        cc_percentile=95, cohen_threshold=0.5,
+                        min_cc_threshold=0.2, min_activity_threshold=0.1,
+                        exclude_edge_bins=3, edge_activity_threshold=0.7):
+    """
+    Extended version of test_cell_reliability that also returns information
+    about which cells were excluded due to edge activity, for visualization.
+    
+    Parameters:
+    -----------
+    Same as test_cell_reliability
+        
+    Returns:
+    --------
+    reliable_cells : numpy.ndarray
+        Boolean array indicating reliable cells
+    average_cc : numpy.ndarray
+        Average correlation coefficients
+    cohen_d : numpy.ndarray
+        Cohen's D values
+    iterated_cc : numpy.ndarray
+        Correlation coefficients for each shuffle
+    normalized_activity : numpy.ndarray
+        Normalized activity levels
+    edge_cells : numpy.ndarray
+        Boolean array indicating cells excluded due to edge activity
+    edge_activity_start : numpy.ndarray
+        Activity level in starting edge bins for each cell
+    edge_activity_end : numpy.ndarray
+        Activity level in ending edge bins for each cell
+    """
+    n_cells = spatial_activity.shape[0]
+    n_trials = spatial_activity.shape[1]
+    n_bins = spatial_activity.shape[2]
+    
+    # Initialize output arrays
+    reliable_cells = np.zeros(n_cells, dtype=bool)
+    average_cc = np.zeros(n_cells)
+    cohen_d = np.zeros(n_cells)
+    iterated_cc = np.zeros((n_shuffles, n_cells))
+    
+    # Arrays for edge detection
+    edge_cells = np.zeros(n_cells, dtype=bool)
+    edge_activity_start = np.zeros(n_cells)
+    edge_activity_end = np.zeros(n_cells)
+    
+    # Calculate activity levels for all cells
+    cell_activity_levels = np.mean(spatial_activity, axis=(1,2))
+    max_activity = np.max(cell_activity_levels)
+    normalized_activity = cell_activity_levels / max_activity if max_activity > 0 else cell_activity_levels
+    
+    for cell in range(n_cells):
+        # Skip cells with too little activity
+        if normalized_activity[cell] < min_activity_threshold:
+            continue
+            
+        # Arrays to store correlation coefficients
+        bt_cc_data = np.zeros(n_shuffles)
+        bt_cc_rand = np.zeros(n_shuffles)
+        
+        cell_activity = spatial_activity[cell]
+        
+        # Check for high activity in edge bins
+        # First calculate trial-averaged activity
+        trial_avg_activity = np.mean(cell_activity, axis=0)
+        
+        # Normalize trial averaged activity
+        norm_trial_avg = (trial_avg_activity - np.min(trial_avg_activity)) / (np.max(trial_avg_activity) - np.min(trial_avg_activity)) if np.max(trial_avg_activity) > np.min(trial_avg_activity) else np.zeros_like(trial_avg_activity)
+
+        # Calculate average activity in first and last bins
+        start_bins_avg = np.mean(norm_trial_avg[:exclude_edge_bins])
+        end_bins_avg = np.mean(norm_trial_avg[-exclude_edge_bins:])
+        
+        # Store edge activity values for visualization
+        edge_activity_start[cell] = start_bins_avg
+        edge_activity_end[cell] = end_bins_avg
+        
+        # Skip cells with high activity in edge bins
+        if start_bins_avg > edge_activity_threshold or end_bins_avg > edge_activity_threshold:
+            edge_cells[cell] = True
+            continue
+        
+        for shuffle in range(n_shuffles):
+            # Random split of trials
+            trial_indices = np.random.permutation(n_trials)
+            split_point = n_trials // 2
+            trials1 = trial_indices[:split_point]
+            trials2 = trial_indices[split_point:]
+            
+            # Calculate means for actual data
+            first_half_mean = np.mean(cell_activity[trials1], axis=0)
+            second_half_mean = np.mean(cell_activity[trials2], axis=0)
+            
+            # Calculate correlation for actual data
+            cc = np.corrcoef(first_half_mean, second_half_mean)[0, 1]
+            bt_cc_data[shuffle] = cc
+            
+            # Create shuffled version of the data
+            activity_rand = np.zeros_like(cell_activity)
+            for trial in range(n_trials):
+                shift = np.random.randint(n_bins)
+                activity_rand[trial] = np.roll(cell_activity[trial], shift)
+            
+            # Calculate means for shuffled data
+            first_half_rand_mean = np.mean(activity_rand[trials1], axis=0)
+            second_half_rand_mean = np.mean(activity_rand[trials2], axis=0)
+            
+            # Calculate correlation for shuffled data
+            cc_rand = np.corrcoef(first_half_rand_mean, second_half_rand_mean)[0, 1]
+            bt_cc_rand[shuffle] = cc_rand
+        
+        # Calculate average correlation coefficient
+        average_cc[cell] = np.mean(bt_cc_data)
+        
+        # Calculate Cohen's D
+        mean_diff = np.mean(bt_cc_data) - np.mean(bt_cc_rand)
+        n1, n2 = len(bt_cc_data), len(bt_cc_rand)
+        var1, var2 = np.var(bt_cc_data, ddof=1), np.var(bt_cc_rand, ddof=1)
+        
+        # Pooled standard deviation
+        pooled_sd = np.sqrt(((n1-1)*var1 + (n2-1)*var2) / (n1 + n2 - 2))
+        cohen_d[cell] = mean_diff / pooled_sd if pooled_sd > 0 else 0
+        
+        # Multiple criteria for reliability
+        avg_bt_cc = np.mean(bt_cc_data)
+        shuffle_threshold = np.percentile(bt_cc_rand, cc_percentile)
+        
+        # Cell is considered reliable if:
+        # 1. Average correlation is above minimum threshold
+        # 2. Average correlation is above shuffle threshold
+        # 3. Effect size (Cohen's D) is large enough
+        if (avg_bt_cc > min_cc_threshold and  # Minimum correlation threshold
+            avg_bt_cc > shuffle_threshold and  # Better than shuffled
+            cohen_d[cell] > cohen_threshold):  # Large enough effect
+            reliable_cells[cell] = True
+            
+    return reliable_cells, average_cc, cohen_d, iterated_cc, normalized_activity, edge_cells, edge_activity_start, edge_activity_end
+
+
+def plot_edge_activity_distributions(edge_activity_start, edge_activity_end, reliable_cells, edge_cells, edge_threshold=0.7):
+    """
+    Visualize the distribution of edge activity for cells, highlighting which were
+    excluded due to high edge activity.
+    
+    Parameters:
+    -----------
+    edge_activity_start : numpy.ndarray
+        Activity in starting edge bins
+    edge_activity_end : numpy.ndarray
+        Activity in ending edge bins
+    reliable_cells : numpy.ndarray
+        Boolean array indicating reliable cells (before edge exclusion)
+    edge_cells : numpy.ndarray
+        Boolean array indicating cells excluded due to edge activity
+    edge_threshold : float
+        Threshold used for excluding edge cells
+    """
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 5))
+    
+    # Create categories for cells
+    categories = np.zeros(len(reliable_cells), dtype=int)
+    categories[reliable_cells & ~edge_cells] = 1  # Reliable, not edge
+    categories[reliable_cells & edge_cells] = 2   # Would be reliable, but excluded due to edge
+    categories[~reliable_cells & edge_cells] = 3  # Not reliable, high edge activity
+    
+    # Plot start edge activity
+    for cat, label, color in zip(
+        [1, 2, 3, 0], 
+        ['Reliable', 'Would be reliable (excluded)', 'Not reliable, high edge', 'Not reliable, low edge'],
+        ['green', 'red', 'orange', 'gray']
+    ):
+        mask = categories == cat
+        if np.any(mask):
+            ax1.scatter(np.where(mask)[0], edge_activity_start[mask], 
+                      color=color, alpha=0.7, label=label)
+    
+    ax1.axhline(y=edge_threshold, color='r', linestyle='--', alpha=0.5, label=f'Threshold ({edge_threshold})')
+    ax1.set_xlabel('Cell Index')
+    ax1.set_ylabel('Start Edge Activity')
+    ax1.set_title('Activity in First Few Bins')
+    ax1.legend()
+    
+    # Plot end edge activity
+    for cat, label, color in zip(
+        [1, 2, 3, 0], 
+        ['Reliable', 'Would be reliable (excluded)', 'Not reliable, high edge', 'Not reliable, low edge'],
+        ['green', 'red', 'orange', 'gray']
+    ):
+        mask = categories == cat
+        if np.any(mask):
+            ax2.scatter(np.where(mask)[0], edge_activity_end[mask], 
+                      color=color, alpha=0.7, label=label)
+    
+    ax2.axhline(y=edge_threshold, color='r', linestyle='--', alpha=0.5, label=f'Threshold ({edge_threshold})')
+    ax2.set_xlabel('Cell Index')
+    ax2.set_ylabel('End Edge Activity')
+    ax2.set_title('Activity in Last Few Bins')
+    ax2.legend()
+    
+    plt.tight_layout()
+    return fig
+
+
+def visualize_cell_edge_profiles(spatial_activity, cell_indices, exclude_edge_bins=3):
+    """
+    Visualize the trial-averaged activity profiles for specific cells, highlighting edge regions.
+    
+    Parameters:
+    -----------
+    spatial_activity : numpy.ndarray
+        Activity matrix (n_cells x n_trials x n_spatial_bins)
+    cell_indices : list or numpy.ndarray
+        Indices of cells to visualize
+    exclude_edge_bins : int
+        Number of bins at edges that are considered "edge regions"
+    """
+    n_cells = len(cell_indices)
+    n_cols = min(3, n_cells)
+    n_rows = (n_cells + n_cols - 1) // n_cols
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(15, 3*n_rows))
+    if n_rows == 1 and n_cols == 1:
+        axes = [axes]
+    elif n_rows == 1 or n_cols == 1:
+        axes = axes.flatten()
+    
+    for i, cell_idx in enumerate(cell_indices):
+        if i >= n_rows * n_cols:
+            break
+            
+        ax = axes[i] if n_cells > 1 else axes
+        
+        # Get cell activity and calculate trial average
+        cell_activity = spatial_activity[cell_idx]
+        trial_avg = np.mean(cell_activity, axis=0)
+        
+        # Normalize for better visualization
+        normalized_avg = (trial_avg - np.min(trial_avg)) / (np.max(trial_avg) - np.min(trial_avg)) if np.max(trial_avg) > np.min(trial_avg) else np.zeros_like(trial_avg)
+        
+        # Plot the profile
+        ax.plot(normalized_avg, 'b-', linewidth=2)
+        
+        # Highlight edge regions
+        n_bins = len(normalized_avg)
+        start_region = np.arange(exclude_edge_bins)
+        end_region = np.arange(n_bins - exclude_edge_bins, n_bins)
+        
+        ax.fill_between(start_region, 0, 1, color='red', alpha=0.2)
+        ax.fill_between(end_region, 0, 1, color='red', alpha=0.2)
+        
+        # Calculate edge activity
+        start_avg = np.mean(normalized_avg[:exclude_edge_bins])
+        end_avg = np.mean(normalized_avg[-exclude_edge_bins:])
+        
+        ax.set_title(f'Cell {cell_idx} (Start: {start_avg:.2f}, End: {end_avg:.2f})')
+        ax.set_xlabel('Spatial Bin')
+        ax.set_ylabel('Normalized Activity')
+        ax.set_ylim(0, 1.05)
+    
+    # Remove empty subplots
+    for i in range(n_cells, n_rows * n_cols):
+        if n_cells > 1:
+            fig.delaxes(axes[i])
+    
+    plt.tight_layout()
+    return fig
 
 def normalize_spatial_activity(spatial_activity):
     """

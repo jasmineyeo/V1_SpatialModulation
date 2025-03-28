@@ -14,18 +14,20 @@
 from .read_xml import read_xml
 from .time2float import time2float
 from .twop import TwoP
-from .SpikeSmoothing import smooth_spikes, plot_comparison, plot_sample_cells, spatial_smooth
+from .SpikeSmoothing import apply_temporal_offset, smooth_spikes, plot_comparison, plot_sample_cells, spatial_smooth
 from .BehavioralDataFiltering import reshape_into_laps, process_data_with_trial_filtering
 from .spatial_discretization import spatial_assignment
-from .ReliabilityTesting import test_cell_reliability, normalize_spatial_activity, plot_reliable_cells_side_by_side, plot_reliable_cells_grid, plot_reliable_cells_waterfall 
+from .ReliabilityTesting import test_cell_reliability, test_cell_reliability_with_edge_visualization, plot_edge_activity_distributions, visualize_cell_edge_profiles, normalize_spatial_activity, plot_reliable_cells_side_by_side, plot_reliable_cells_grid, plot_reliable_cells_waterfall 
 from .ResponseVisualization import create_response_plot, create_waterfall_plot
+from .SpatialModulationIndex import calculate_SMI, plot_SMI_results, create_heatmap_visualization, analyze_spatial_modulation
 
 # Specify what is available when you import the package
 __all__ = ["read_xml",
            "time2float",
            "TwoP",
-           "smooth_spikes", "plot_comparison", "plot_sample_cells", "spatial_smooth",
+           "apply_temporal_offset", "smooth_spikes", "plot_comparison", "plot_sample_cells", "spatial_smooth",
            "reshape_into_laps", "process_data_with_trial_filtering",
            "spatial_assignment",
-           "test_cell_reliability", "normalize_spatial_activity", "plot_reliable_cells_side_by_side", "plot_reliable_cells_grid","plot_reliable_cells_waterfall",
-           "create_response_plot", "create_waterfall_plot"]
+           "test_cell_reliability", "test_cell_reliability_with_edge_visualization", "plot_edge_activity_distributions", "visualize_cell_edge_profiles", "normalize_spatial_activity", "plot_reliable_cells_side_by_side", "plot_reliable_cells_grid","plot_reliable_cells_waterfall",
+           "create_response_plot", "create_waterfall_plot",
+           "calculate_SMI", "plot_SMI_results", "create_heatmap_visualization", "analyze_spatial_modulation"]

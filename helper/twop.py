@@ -46,12 +46,16 @@ class TwoP():
         self.F = np.load(os.path.join(self.recording_path, r'suite2p/plane0/F.npy'), allow_pickle=True)
         self.Fneu = np.load(os.path.join(self.recording_path, r'suite2p/plane0/Fneu.npy'), allow_pickle=True)
         iscell = np.load(os.path.join(self.recording_path, r'suite2p/plane0/iscell.npy'), allow_pickle=True)
+        self.stat = np.load(os.path.join(self.recording_path, r'suite2p/plane0/stat.npy'), allow_pickle=True)
+        self.ops = np.load(os.path.join(self.recording_path, r'suite2p/plane0/ops.npy'), allow_pickle=True).item()
         spks = np.load(os.path.join(self.recording_path, r'suite2p/plane0/spks.npy'), allow_pickle=True)
 
         usecells = iscell[:,0]==1
 
         self.F = self.F[usecells, :]
         self.Fneu = self.Fneu[usecells, :]
+        self.stat = self.stat[usecells]
+        self.ops = self.ops
         self.s2p_spks = spks[usecells, :]
 
 
@@ -108,7 +112,9 @@ class TwoP():
             'norm_dFF': norm_dFF,
             'denoised_dFF': denoised_dFF,
             'spikes_per_sec': sps,
-            's2p_spks': self.s2p_spks
+            's2p_spks': self.s2p_spks,
+            'stat': self.stat,
+            'ops': self.ops
         }
 
         return twop_dict

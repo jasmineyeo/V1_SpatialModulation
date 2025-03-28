@@ -41,20 +41,26 @@ def create_response_plot(normalized_spatial_activity, reliable_cells, clim=None)
     # Step 4: Enhance contrast in the trial-averaged data
     # Apply a non-linear transformation to enhance small differences
     # (using power function, which enhances high values more than low ones)
-    enhanced_even_avg = np.power(even_avg, 1.5)  # Adjust power as needed
+    # enhanced_even_avg = np.power(even_avg, 1.5)  # Adjust power as needed
+    enhanced_odd_avg = np.power(odd_avg, 0.5)  # Adjust power as needed
     
     # Step 5: Find peak location for each cell in the enhanced even trials
-    peak_locations = np.argmax(enhanced_even_avg, axis=1)
+    peak_locations = np.argmax(enhanced_odd_avg, axis=1)
     
     # Step 6: Sort the cell indices by their peak locations
     sorted_indices = np.argsort(peak_locations)
     
     # Step 7: Apply sorting to odd trials for display
-    # sorted_even_activity = even_avg[sorted_indices]
+    sorted_even_activity = even_avg[sorted_indices]
     sorted_odd_activity = odd_avg[sorted_indices]
     
+    # step 8: normalize the sorted_even_activity by each cell
+    for i in range(len(sorted_even_activity)):
+        sorted_even_activity[i] = (sorted_even_activity[i] - np.min(sorted_even_activity[i])) / (np.max(sorted_even_activity[i]) - np.min(sorted_even_activity[i]))
+        sorted_odd_activity[i] = (sorted_odd_activity[i] - np.min(sorted_odd_activity[i])) / (np.max(sorted_odd_activity[i]) - np.min(sorted_odd_activity[i]))
+
     # Step 8: Create the figure
-    fig, ax = plt.subplots(figsize=(10, 8))
+    fig, axes = plt.subplots(1, 2, figsize=(20, 8))    
     
     # Create a more vibrant colormap with stronger contrast
     cmap = LinearSegmentedColormap.from_list('EnhancedBlues', 
@@ -63,8 +69,8 @@ def create_response_plot(normalized_spatial_activity, reliable_cells, clim=None)
     # Auto-calculate color limits if not provided
     if clim is None:
         # Use percentiles instead of min/max for better contrast
-        vmin = np.percentile(sorted_odd_activity, 5)  # 5th percentile as minimum
-        vmax = np.percentile(sorted_odd_activity, 95)  # 95th percentile as maximum
+        vmin = np.percentile(sorted_even_activity, 5)  # 5th percentile as minimum
+        vmax = np.percentile(sorted_even_activity, 95)  # 95th percentile as maximum
         # Ensure we have a reasonable range
         if vmax - vmin < 0.1:
             vmin = 0
@@ -73,21 +79,69 @@ def create_response_plot(normalized_spatial_activity, reliable_cells, clim=None)
         vmin, vmax = clim
     
     # Plot the sorted odd trials with enhanced contrast
-    im = ax.imshow(sorted_odd_activity, aspect='auto', cmap=cmap, 
-                  interpolation='nearest', vmin=vmin, vmax=vmax)    
-    # im = ax.imshow(sorted_odd_activity, aspect='auto', cmap=cmap, 
+    ax1 = axes[0]
+    ax2 = axes[1]
+    
+    # Plot the sorted odd trials with enhanced contrast
+   
+    im = ax1.imshow(sorted_odd_activity, aspect='auto', cmap=cmap, 
+                  interpolation='nearest', vmin=vmin, vmax=vmax)
+        # im = ax.imshow(sorted_odd_activity, aspect='auto', cmap=cmap, 
     #               interpolation='nearest', vmin=vmin, vmax=vmax)
     
+    for i in range(np.shape(sorted_odd_activity)[0]):
+        # print(np.argmax(sorted_even_activity[i, :]))
+        # find index of np.max(sorted_odd_activity[i, :])
+        max_value_idx = np.argmax(sorted_odd_activity[i, :])
+        if max_value_idx == 0 or max_value_idx == 1 or max_value_idx == 2 or max_value_idx == 108 or max_value_idx == 109 or max_value_idx == 110:
+            # do nothing
+            pass
+        if 2 < max_value_idx < 55:
+            ax1.scatter(max_value_idx+52,i, color='g', alpha=0.35)
+        if 55 < max_value_idx < 108:
+            ax1.scatter(max_value_idx-52,i, color='g', alpha=0.35)
+        
     # Add colorbar
-    cbar = plt.colorbar(im, ax=ax)
+    cbar = plt.colorbar(im, ax=ax1)
     cbar.set_label('Normalized Activity')
     
     # Add labels and title
-    ax.set_xlabel('Spatial Bin')
-    ax.set_ylabel('Cell Number (sorted by peak location)')
-    ax.set_title('Enhanced Spatial Responses - Sorted by Peak Location in Even Trials\n'
+    ax1.set_xlabel('Spatial Bin')
+    ax1.set_ylabel('Cell Number (sorted by peak location)')
+    ax1.set_title('Spatial Responses - Sorted by Peak Location in Odd Trials\n'
                 f'(Displaying Odd Trials for {len(reliable_indices)} Reliable Cells)')
     
+    
+    im = ax2.imshow(sorted_even_activity, aspect='auto', cmap=cmap, 
+                  interpolation='nearest', vmin=vmin, vmax=vmax)
+    for i in range(np.shape(sorted_even_activity)[0]):
+        # print(np.argmax(sorted_odd_activity[i, :]))
+        # find index of np.max(sorted_odd_activity[i, :])
+        max_value_idx = np.argmax(sorted_even_activity[i, :])
+        # print(f"max_value_idx: {max_value_idx}for cell {i}")
+        if max_value_idx == 0 or max_value_idx == 1 or max_value_idx == 2 or max_value_idx == 108 or max_value_idx == 109 or max_value_idx == 110:
+            # do nothing
+            pass
+        if 2 < max_value_idx < 55:
+            # ax2.scatter(max_value_idx,i, color='r', alpha=0.5)
+            # ax2.scatter(max_value_idx+52,i, color='purple', alpha=0.5)
+            pass
+        if 55 < max_value_idx < 108:
+            
+            # ax2.scatter(max_value_idx,i, color='r', alpha=0.5)
+            # ax2.scatter(max_value_idx-52,i, color='orange', alpha=0.5)
+            pass
+    
+    # Add colorbar
+    cbar = plt.colorbar(im, ax=ax2)
+    cbar.set_label('Normalized Activity')
+    
+    # Add labels and title
+    ax2.set_xlabel('Spatial Bin')
+    ax2.set_ylabel('Cell Number (sorted by peak location)')
+    ax2.set_title('Spatial Responses - Sorted by Peak Location in Odd Trials\n'
+                f'(Displaying Even Trials for {len(reliable_indices)} Reliable Cells)')
+            
     # Return the figure and sorted indices of reliable cells
     sorted_reliable_indices = reliable_indices[sorted_indices]
     
