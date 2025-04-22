@@ -19,7 +19,7 @@ from .BehavioralDataFiltering import reshape_into_laps, process_data_with_trial_
 from .spatial_discretization import spatial_assignment
 from .ReliabilityTesting import test_cell_reliability, test_cell_reliability_with_edge_visualization, plot_edge_activity_distributions, visualize_cell_edge_profiles, normalize_spatial_activity, plot_reliable_cells_side_by_side, plot_reliable_cells_grid, plot_reliable_cells_waterfall 
 from .ResponseVisualization import create_response_plot, create_waterfall_plot
-from .SpatialModulationIndex import calculate_SMI, plot_SMI_results, create_heatmap_visualization, analyze_spatial_modulation
+from .SpatialModulationIndex import double_gaussian, fit_response_profile, calculate_SMI, plot_SMI_results, analyze_spatial_modulation
 
 # Specify what is available when you import the package
 __all__ = ["read_xml",
@@ -30,4 +30,4 @@ __all__ = ["read_xml",
            "spatial_assignment",
            "test_cell_reliability", "test_cell_reliability_with_edge_visualization", "plot_edge_activity_distributions", "visualize_cell_edge_profiles", "normalize_spatial_activity", "plot_reliable_cells_side_by_side", "plot_reliable_cells_grid","plot_reliable_cells_waterfall",
            "create_response_plot", "create_waterfall_plot",
-           "calculate_SMI", "plot_SMI_results", "create_heatmap_visualization", "analyze_spatial_modulation"]
+           "double_gaussian", "fit_response_profile", "calculate_SMI", "plot_SMI_results", "analyze_spatial_modulation"]

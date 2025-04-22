@@ -89,17 +89,19 @@ def create_response_plot(normalized_spatial_activity, reliable_cells, clim=None)
         # im = ax.imshow(sorted_odd_activity, aspect='auto', cmap=cmap, 
     #               interpolation='nearest', vmin=vmin, vmax=vmax)
     
-    for i in range(np.shape(sorted_odd_activity)[0]):
-        # print(np.argmax(sorted_even_activity[i, :]))
-        # find index of np.max(sorted_odd_activity[i, :])
-        max_value_idx = np.argmax(sorted_odd_activity[i, :])
-        if max_value_idx == 0 or max_value_idx == 1 or max_value_idx == 2 or max_value_idx == 108 or max_value_idx == 109 or max_value_idx == 110:
-            # do nothing
-            pass
-        if 2 < max_value_idx < 55:
-            ax1.scatter(max_value_idx+52,i, color='g', alpha=0.35)
-        if 55 < max_value_idx < 108:
-            ax1.scatter(max_value_idx-52,i, color='g', alpha=0.35)
+    # for i in range(np.shape(sorted_odd_activity)[0]):
+    #     # print(np.argmax(sorted_even_activity[i, :]))
+    #     # find index of np.max(sorted_odd_activity[i, :])
+    #     max_value_idx = np.argmax(sorted_odd_activity[i, :])
+    #     if max_value_idx == 0 or max_value_idx == 1 or max_value_idx == 2 or max_value_idx == 108 or max_value_idx == 109 or max_value_idx == 110:
+    #         # do nothing
+    #         pass
+    #     if 2 < max_value_idx < 55:
+    #         pass
+    #         # ax1.scatter(max_value_idx+52,i, color='g', alpha=0.35)
+    #     if 55 < max_value_idx < 108:
+    #         pass
+    #         # ax1.scatter(max_value_idx-52,i, color='g', alpha=0.35)
         
     # Add colorbar
     cbar = plt.colorbar(im, ax=ax1)
@@ -114,23 +116,23 @@ def create_response_plot(normalized_spatial_activity, reliable_cells, clim=None)
     
     im = ax2.imshow(sorted_even_activity, aspect='auto', cmap=cmap, 
                   interpolation='nearest', vmin=vmin, vmax=vmax)
-    for i in range(np.shape(sorted_even_activity)[0]):
-        # print(np.argmax(sorted_odd_activity[i, :]))
-        # find index of np.max(sorted_odd_activity[i, :])
-        max_value_idx = np.argmax(sorted_even_activity[i, :])
-        # print(f"max_value_idx: {max_value_idx}for cell {i}")
-        if max_value_idx == 0 or max_value_idx == 1 or max_value_idx == 2 or max_value_idx == 108 or max_value_idx == 109 or max_value_idx == 110:
-            # do nothing
-            pass
-        if 2 < max_value_idx < 55:
-            # ax2.scatter(max_value_idx,i, color='r', alpha=0.5)
-            # ax2.scatter(max_value_idx+52,i, color='purple', alpha=0.5)
-            pass
-        if 55 < max_value_idx < 108:
+    # for i in range(np.shape(sorted_even_activity)[0]):
+    #     # print(np.argmax(sorted_odd_activity[i, :]))
+    #     # find index of np.max(sorted_odd_activity[i, :])
+    #     max_value_idx = np.argmax(sorted_even_activity[i, :])
+    #     # print(f"max_value_idx: {max_value_idx}for cell {i}")
+    #     if max_value_idx == 0 or max_value_idx == 1 or max_value_idx == 2 or max_value_idx == 108 or max_value_idx == 109 or max_value_idx == 110:
+    #         # do nothing
+    #         pass
+    #     if 2 < max_value_idx < 55:
+    #         # ax2.scatter(max_value_idx,i, color='r', alpha=0.5)
+    #         # ax2.scatter(max_value_idx+52,i, color='purple', alpha=0.5)
+    #         pass
+    #     if 55 < max_value_idx < 108:
             
-            # ax2.scatter(max_value_idx,i, color='r', alpha=0.5)
-            # ax2.scatter(max_value_idx-52,i, color='orange', alpha=0.5)
-            pass
+    #         # ax2.scatter(max_value_idx,i, color='r', alpha=0.5)
+    #         # ax2.scatter(max_value_idx-52,i, color='orange', alpha=0.5)
+    #         pass
     
     # Add colorbar
     cbar = plt.colorbar(im, ax=ax2)
