@@ -40,11 +40,11 @@ class SpatialModulationIndexLayerSpecific:
             # Find peak density (Layer 4)
             peak_idx = np.argmax(smooth_density)
             peak_density_y = bin_centers_density[peak_idx]
-            print(f'Automatically detected peak density at y = {peak_density_y}')
+            print(f'Automatically detected peak density at y = {peak_density_y:.2f}')
         else:
             # Use middle of the distribution as an estimate
             peak_density_y = np.median(med_coords[:, 0])
-            print(f'Using median y-value as peak density: y = {peak_density_y}')
+            print(f'Using median y-value as peak density: y = {peak_density_y:.2f}')
         
         # Define layer boundaries based on distance from peak
         
@@ -77,6 +77,11 @@ class SpatialModulationIndexLayerSpecific:
         layer5_cells = np.where((med_coords[:, 0] >= layer5_upper) & (med_coords[:, 0] < layer5_lower))[0]
         layer6_cells = np.where(med_coords[:, 0] >= layer6_upper)[0]
         
+        print(f'Layer 2/3: {np.size(layer23_cells)} cells in from {layer23_upper:.2f} to {layer23_lower:.2f}')
+        print(f'Layer 4: {np.size(layer4_cells)} cells in from {layer4_upper:.2f} to {layer4_lower:.2f}')
+        print(f'Layer 5: {np.size(layer5_cells)} cells in from {layer5_upper:.2f} to {layer5_lower:.2f}')
+        print(f'Layer 6: {np.size(layer6_cells)} cells in from {layer6_upper:.2f} to {layer6_lower:.2f}')
+        
         # Create the layer_cells dictionary
         layer_cells = {
             'L2/3': layer23_cells,
@@ -93,241 +98,73 @@ class SpatialModulationIndexLayerSpecific:
             'L6': (layer6_upper, layer6_lower)
         }
         
-        # Print number of cells in each layer
-        for layer, cells in layer_cells.items():
-            print(f"{layer}: {len(cells)} cells")
-            
         return layer_cells, layer_boundaries
         
     @staticmethod
-    def calculate_SMI(spatial_activity, bin_centers, reliable_cells, segment_distance=55, exclude_boundary_cm=10):
+    def analyze_layer_specific_smi_from_existing_results(smi_results, layer_cells, reliable_cells):
         """
-        Calculate the Spatial Modulation Index (SMI) using cross-validation approach.
-        - Odd trials to find preferred position
-        - Even trials to measure responses
-        - SMI = (Rp - Rn) / (Rp + Rn)
-        
-        Where Rp = response at preferred position, Rn = response at non-preferred position.
+        Organize pre-calculated SMI values by layer and perform statistical analysis.
         
         Parameters:
         -----------
-        spatial_activity : numpy.ndarray
-            Activity matrix (n_cells x n_trials x n_spatial_bins)
-        bin_centers : numpy.ndarray
-            Centers of spatial bins
-        segment_distance : float
-            Distance between repeated segments in the VR environment
-        exclude_boundary_cm : float
-            Distance from corridor boundaries to exclude for preferred positions
-            
-        Returns:
-        --------
-        results : dict
-            Dictionary with SMI calculation results
-        """
-        n_cells, n_trials, n_bins = spatial_activity.shape
-        
-        # Separate odd and even trials
-        odd_indices = np.arange(0, n_trials, 2)
-        even_indices = np.arange(1, n_trials, 2)
-        
-        # Calculate corridor boundaries
-        min_pos = np.min(bin_centers)
-        max_pos = np.max(bin_centers)
-        corridor_length = max_pos - min_pos
-        
-        # Calculate boundary positions in the original coordinate system
-        min_allowed = min_pos + exclude_boundary_cm
-        max_allowed = max_pos - exclude_boundary_cm
-        
-        # print(f"  Corridor length: {corridor_length:.2f}")
-        # print(f"  Valid position range: {min_allowed:.2f} to {max_allowed:.2f}")
-        
-        # Check if segment distance is compatible with the corridor length
-        if segment_distance > corridor_length:
-            print(f"WARNING: Segment distance ({segment_distance}) is larger than corridor length ({corridor_length:.2f})!")
-            # Try to auto-correct by using half the corridor length
-            segment_distance = corridor_length / 2
-            print(f"  Auto-correcting segment distance to {segment_distance:.2f}")
-        
-        # Compute response profiles for odd and even trials
-        odd_profiles = np.mean(spatial_activity[:, odd_indices, :], axis=1)
-        even_profiles = np.mean(spatial_activity[:, even_indices, :], axis=1)
-        
-        # Initialize arrays to store results
-        SMI_values = np.zeros(n_cells)
-        preferred_positions = np.zeros(n_cells)
-        non_preferred_positions = np.zeros(n_cells)
-        Rp_values = np.zeros(n_cells)
-        Rn_values = np.zeros(n_cells)
-        valid_cells = np.zeros_like(reliable_cells, dtype=bool)
-        
-        # Count various rejection reasons
-        outside_boundary_count = 0
-        nonpref_outside_range_count = 0
-        zero_response_count = 0
-        valid_count = 0
-        
-        for cell in range(n_cells):
-        # Find the preferred position from odd trials
-            preferred_idx_odd = np.argmax(odd_profiles[cell])
-            preferred_position_odd = bin_centers[preferred_idx_odd]
-
-            # Check if the preferred position is within allowed boundaries
-            if preferred_position_odd < min_allowed or preferred_position_odd > max_allowed:
-                outside_boundary_count += 1
-                if cell < len(valid_cells):
-                    valid_cells[cell] = False
-                continue
-
-            # Find the maximum response in even trials within ±5 indices from preferred_idx_odd
-            start_idx_pref = max(0, preferred_idx_odd - 5)
-            end_idx_pref = min(n_bins, preferred_idx_odd + 5)
-            window_profile_pref = even_profiles[cell, start_idx_pref:end_idx_pref]
-            window_max_idx_pref = np.argmax(window_profile_pref)
-            preferred_idx_even = start_idx_pref + window_max_idx_pref
-            preferred_position_even = bin_centers[preferred_idx_even]
-
-            # Calculate the non-preferred position (both possibilities)
-            corridor_midpoint = min_pos + corridor_length / 2
-            if preferred_position_even < corridor_midpoint:
-                # If in first segment, the non-preferred position is in second segment
-                non_preferred_position_approx = preferred_position_even + segment_distance
-            else:
-                # If in second segment, the non-preferred position is in first segment
-                non_preferred_position_approx = preferred_position_even - segment_distance
-
-            # Check if non-preferred position is within corridor bounds
-            max_pos = np.max(bin_centers)
-            if non_preferred_position_approx < min_pos or non_preferred_position_approx > max_pos:
-                nonpref_outside_range_count += 1
-                valid_cells[cell] = False
-                continue
-
-            # Find the closest bin to the non-preferred position
-            non_preferred_idx_approx = np.argmin(np.abs(bin_centers - non_preferred_position_approx))
-
-            # Find the maximum response within ±5 indices of the non-preferred position
-            start_idx_nonpref = max(0, non_preferred_idx_approx - 5)
-            end_idx_nonpref = min(n_bins, non_preferred_idx_approx + 5)
-            window_profile_nonpref = even_profiles[cell, start_idx_nonpref:end_idx_nonpref]
-            window_max_idx_nonpref = np.argmax(window_profile_nonpref)
-            non_preferred_idx_even = start_idx_nonpref + window_max_idx_nonpref
-            non_preferred_position_even = bin_centers[non_preferred_idx_even]
-            non_preferred_resp = window_profile_nonpref[window_max_idx_nonpref]
-
-            # Get responses at the adjusted preferred and non-preferred positions from EVEN trials
-            Rp = even_profiles[cell, preferred_idx_even]
-            Rn = non_preferred_resp  
-
-            # Calculate SMI
-            if Rp + Rn > 0:  # Avoid division by zero
-                SMI = (Rp - Rn) / (Rp + Rn)
-                valid_count += 1
-            else:
-                SMI = 0
-                zero_response_count += 1
-                valid_cells[cell] = False
-                continue
-            
-            # Store results - use the adjusted positions from even trials
-            SMI_values[cell] = SMI
-            preferred_positions[cell] = preferred_position_even
-            non_preferred_positions[cell] = non_preferred_position_even
-            Rp_values[cell] = Rp
-            Rn_values[cell] = Rn
-            valid_cells[cell] = True
-            
-        # find cells that are true for both reliable_cells and valid_cells
-        if reliable_cells is not None:
-            reliable_valid_cells = np.logical_and(valid_cells, reliable_cells)
-        
-        # Print summary statistics
-        print(f"\nSMI calculation summary:")
-        print(f"  Total cells: {n_cells}")
-        print(f"  Rejected - preferred position outside boundary: {outside_boundary_count} ({outside_boundary_count/n_cells*100:.1f}%)")
-        print(f"  Rejected - non-preferred position outside corridor: {nonpref_outside_range_count} ({nonpref_outside_range_count/n_cells*100:.1f}%)")
-        print(f"  Rejected - zero response sum: {zero_response_count} ({zero_response_count/n_cells*100:.1f}%)")
-        print(f"  Valid cells: {np.sum(valid_cells)} ({np.sum(valid_cells)/n_cells*100:.1f}%)")
-        print(f"  Reliable cells: {np.sum(reliable_cells)} ({np.sum(reliable_cells)/n_cells*100:.1f}%)")
-        print(f"  Reliable&Valid cells: {np.sum(reliable_valid_cells)} ({np.sum(reliable_valid_cells)/n_cells*100:.1f}%)")
-        print()
-        
-        # Create result dictionary
-        results = {
-            'SMI': SMI_values,
-            'preferred_positions': preferred_positions,
-            'non_preferred_positions': non_preferred_positions,
-            'Rp': Rp_values,
-            'Rn': Rn_values,
-            'valid_cells': valid_cells,
-            'reliable_valid_cells': reliable_valid_cells if reliable_cells is not None else None,
-            'parameters': {
-                    'segment_distance': segment_distance,
-                    'exclude_boundary_cm': exclude_boundary_cm,
-                    'n_cells': n_cells,
-                    'n_trials': n_trials,
-                    'n_bins': n_bins,
-                    'corridor_length': corridor_length,
-                    'min_pos': min_pos,
-                    'max_pos': max_pos
-                }
-        }
-        
-        return results
-
-    @staticmethod
-    def analyze_layer_specific_SMI(layer_cells, all_smi_results, reliable_cells):
-        """
-        Analyze layer-specific spatial modulation.
-        
-        Parameters:
-        -----------
+        smi_results : dict
+            Dictionary containing results from SpatialModulationIndex.py calculations
         layer_cells : dict
             Dictionary with indices of cells in each layer
-        all_smi_results : dict
-            SMI calculation results from calculate_SMI
+        reliable_cells : numpy.ndarray
+            Boolean array indicating reliable cells
             
         Returns:
         --------
         layer_results : dict
-            Dictionary with SMI results for each layer
-        classified_cell_count : int
-            Number of reliable valid cells that were classified into layers
-        total_reliable_valid_cells : int
-            Total number of reliable valid cells
+            Dictionary with SMI results organized by layer
         """
+        # Get SMI values and valid cells
+        SMI_values = smi_results['SMI']
+        reliable_valid_cells = smi_results['reliable_valid_cells']
+        
+        # Find cells that are both reliable and valid
+        reliable_valid_indices = np.where(reliable_valid_cells)[0]
+        
+        print(f"Total cells: {len(SMI_values)} and reliable & valid cells: {np.sum(reliable_valid_cells)}")
+        
         # Initialize results dictionary for each layer
         layer_results = {}
         reliable_layer_cells_num = {}
-        for layer, cells in layer_cells.items():
-            reliable_layer_cells = np.intersect1d(np.where(reliable_cells)[0], cells)
-            reliable_layer_cells_num[layer] = len(reliable_layer_cells)
-        
-        # Get all reliable valid cells
-        reliable_valid_cells = np.where(all_smi_results['reliable_valid_cells'])[0]
-        total_reliable_valid_cells = len(reliable_valid_cells)
         
         # Track how many cells we've classified into layers
         classified_cell_count = 0
         
         # Process each layer
         for layer_name, layer_cell_indices in layer_cells.items():
-            # Find reliable valid cells within this layer
-            layer_reliable_indices = np.intersect1d(reliable_valid_cells, layer_cell_indices)
-            classified_cell_count += len(layer_reliable_indices)
+            # Find cells in this layer that are both reliable and valid
+            layer_reliable_valid_cells = np.intersect1d(reliable_valid_indices, layer_cell_indices)
+            classified_cell_count += len(layer_reliable_valid_cells)
             
-            if len(layer_reliable_indices) == 0:
-                print(f"No reliable valid cells found in {layer_name}")
+            # Count reliable cells in this layer (for reference)
+            reliable_layer_cells = np.intersect1d(np.where(reliable_cells)[0], layer_cell_indices)
+            reliable_layer_cells_num[layer_name] = len(reliable_layer_cells)
+            
+            if len(layer_reliable_valid_cells) == 0:
+                print(f"{layer_name}: No reliable valid cells found")
                 layer_results[layer_name] = None
                 continue
             
             # Extract SMI values and other metrics directly for these cells
-            valid_smi = all_smi_results['SMI'][layer_reliable_indices]
-            valid_pref_pos = all_smi_results['preferred_positions'][layer_reliable_indices]
-            valid_nonpref_pos = all_smi_results['non_preferred_positions'][layer_reliable_indices]
-            valid_rp = all_smi_results['Rp'][layer_reliable_indices]
-            valid_rn = all_smi_results['Rn'][layer_reliable_indices]
+            valid_smi = SMI_values[layer_reliable_valid_cells]
+            
+            # Check for NaN values
+            nan_mask = np.isnan(valid_smi)
+            if np.any(nan_mask):
+                print(f"Warning: Found {np.sum(nan_mask)} NaN SMI values in {layer_name}")
+                valid_smi = valid_smi[~nan_mask]
+                layer_reliable_valid_cells = layer_reliable_valid_cells[~nan_mask]
+            
+            # Extract other metrics if available in smi_results
+            valid_pref_pos = smi_results['preferred_positions'][layer_reliable_valid_cells] if 'preferred_positions' in smi_results else None
+            valid_nonpref_pos = smi_results['non_preferred_positions'][layer_reliable_valid_cells] if 'non_preferred_positions' in smi_results else None
+            valid_rp = smi_results['Rp'][layer_reliable_valid_cells] if 'Rp' in smi_results else None
+            valid_rn = smi_results['Rn'][layer_reliable_valid_cells] if 'Rn' in smi_results else None
             
             # Calculate statistics
             mean_smi = np.mean(valid_smi)
@@ -341,11 +178,11 @@ class SpatialModulationIndexLayerSpecific:
                 t_stat = w_stat  # Store the W statistic for consistency
             except:
                 t_stat, p_value = np.nan, np.nan
-                warnings.warn(f"Wilcoxon test failed for layer {layer_name}. This can happen if all values are identical.")
+                print(f"Wilcoxon test failed for layer {layer_name}. This can happen if all values are identical.")
             
             # Store results
             layer_results[layer_name] = {
-                'reliable_valid_cells': layer_reliable_indices,
+                'reliable_valid_cells': layer_reliable_valid_cells,
                 'SMI': valid_smi,
                 'preferred_positions': valid_pref_pos,
                 'non_preferred_positions': valid_nonpref_pos,
@@ -362,7 +199,7 @@ class SpatialModulationIndexLayerSpecific:
             }
             
             # Print summary
-            print(f"{layer_name}: {len(layer_reliable_indices)} / {reliable_layer_cells_num[layer_name]} valid cells")
+            print(f"{layer_name}: {len(layer_reliable_valid_cells)}/{reliable_layer_cells_num[layer_name]} valid cells")
             print(f"  Mean SMI = {mean_smi:.3f} ± {sem_smi:.3f} (SEM)")
             print(f"  Median SMI = {median_smi:.3f}")
             if not np.isnan(p_value):
@@ -370,14 +207,296 @@ class SpatialModulationIndexLayerSpecific:
             print()
         
         # Check if all reliable valid cells were assigned to a layer
-        if classified_cell_count < total_reliable_valid_cells:
-            print(f"Warning: {total_reliable_valid_cells - classified_cell_count} reliable valid cells were not assigned to any layer!")
-        elif classified_cell_count > total_reliable_valid_cells:
-            print(f"Warning: {classified_cell_count - total_reliable_valid_cells} cells were counted multiple times (assigned to multiple layers)!")
+        if classified_cell_count < len(reliable_valid_indices):
+            print(f"Warning: {len(reliable_valid_indices) - classified_cell_count} reliable valid cells were not assigned to any layer!")
+        elif classified_cell_count > len(reliable_valid_indices):
+            print(f"Warning: {classified_cell_count - len(reliable_valid_indices)} cells were counted multiple times (assigned to multiple layers)!")
         else:
-            print(f"All {total_reliable_valid_cells} reliable valid cells were successfully assigned to layers.")
+            print(f"All {len(reliable_valid_indices)} reliable valid cells were successfully assigned to layers.")
         
         return layer_results
+ 
+    # @staticmethod
+    # def calculate_SMI(spatial_activity, bin_centers, reliable_cells, segment_distance=55, exclude_boundary_cm=10):
+    #     """
+    #     Calculate the Spatial Modulation Index (SMI) using cross-validation approach.
+    #     - Odd trials to find preferred position
+    #     - Even trials to measure responses
+    #     - SMI = (Rp - Rn) / (Rp + Rn)
+        
+    #     Where Rp = response at preferred position, Rn = response at non-preferred position.
+        
+    #     Parameters:
+    #     -----------
+    #     spatial_activity : numpy.ndarray
+    #         Activity matrix (n_cells x n_trials x n_spatial_bins)
+    #     bin_centers : numpy.ndarray
+    #         Centers of spatial bins
+    #     segment_distance : float
+    #         Distance between repeated segments in the VR environment
+    #     exclude_boundary_cm : float
+    #         Distance from corridor boundaries to exclude for preferred positions
+            
+    #     Returns:
+    #     --------
+    #     results : dict
+    #         Dictionary with SMI calculation results
+    #     """
+    #     n_cells, n_trials, n_bins = spatial_activity.shape
+        
+    #     # Separate odd and even trials
+    #     odd_indices = np.arange(0, n_trials, 2)
+    #     even_indices = np.arange(1, n_trials, 2)
+        
+    #     # Calculate corridor boundaries
+    #     min_pos = np.min(bin_centers)
+    #     max_pos = np.max(bin_centers)
+    #     corridor_length = max_pos - min_pos
+        
+    #     # Calculate boundary positions in the original coordinate system
+    #     min_allowed = min_pos + exclude_boundary_cm
+    #     max_allowed = max_pos - exclude_boundary_cm
+        
+    #     # print(f"  Corridor length: {corridor_length:.2f}")
+    #     # print(f"  Valid position range: {min_allowed:.2f} to {max_allowed:.2f}")
+        
+    #     # Check if segment distance is compatible with the corridor length
+    #     if segment_distance > corridor_length:
+    #         print(f"WARNING: Segment distance ({segment_distance}) is larger than corridor length ({corridor_length:.2f})!")
+    #         # Try to auto-correct by using half the corridor length
+    #         segment_distance = corridor_length / 2
+    #         print(f"  Auto-correcting segment distance to {segment_distance:.2f}")
+        
+    #     # Compute response profiles for odd and even trials
+    #     odd_profiles = np.mean(spatial_activity[:, odd_indices, :], axis=1)
+    #     even_profiles = np.mean(spatial_activity[:, even_indices, :], axis=1)
+        
+    #     # Initialize arrays to store results
+    #     SMI_values = np.zeros(n_cells)
+    #     preferred_positions = np.zeros(n_cells)
+    #     non_preferred_positions = np.zeros(n_cells)
+    #     Rp_values = np.zeros(n_cells)
+    #     Rn_values = np.zeros(n_cells)
+    #     valid_cells = np.zeros_like(reliable_cells, dtype=bool)
+        
+    #     # Count various rejection reasons
+    #     outside_boundary_count = 0
+    #     nonpref_outside_range_count = 0
+    #     zero_response_count = 0
+    #     valid_count = 0
+        
+    #     for cell in range(n_cells):
+    #     # Find the preferred position from odd trials
+    #         preferred_idx_odd = np.argmax(odd_profiles[cell])
+    #         preferred_position_odd = bin_centers[preferred_idx_odd]
+
+    #         # Check if the preferred position is within allowed boundaries
+    #         if preferred_position_odd < min_allowed or preferred_position_odd > max_allowed:
+    #             outside_boundary_count += 1
+    #             if cell < len(valid_cells):
+    #                 valid_cells[cell] = False
+    #             continue
+
+    #         # Find the maximum response in even trials within ±5 indices from preferred_idx_odd
+    #         start_idx_pref = max(0, preferred_idx_odd - 5)
+    #         end_idx_pref = min(n_bins, preferred_idx_odd + 5)
+    #         window_profile_pref = even_profiles[cell, start_idx_pref:end_idx_pref]
+    #         window_max_idx_pref = np.argmax(window_profile_pref)
+    #         preferred_idx_even = start_idx_pref + window_max_idx_pref
+    #         preferred_position_even = bin_centers[preferred_idx_even]
+
+    #         # Calculate the non-preferred position (both possibilities)
+    #         corridor_midpoint = min_pos + corridor_length / 2
+    #         if preferred_position_even < corridor_midpoint:
+    #             # If in first segment, the non-preferred position is in second segment
+    #             non_preferred_position_approx = preferred_position_even + segment_distance
+    #         else:
+    #             # If in second segment, the non-preferred position is in first segment
+    #             non_preferred_position_approx = preferred_position_even - segment_distance
+
+    #         # Check if non-preferred position is within corridor bounds
+    #         max_pos = np.max(bin_centers)
+    #         if non_preferred_position_approx < min_pos or non_preferred_position_approx > max_pos:
+    #             nonpref_outside_range_count += 1
+    #             valid_cells[cell] = False
+    #             continue
+
+    #         # Find the closest bin to the non-preferred position
+    #         non_preferred_idx_approx = np.argmin(np.abs(bin_centers - non_preferred_position_approx))
+
+    #         # Find the maximum response within ±5 indices of the non-preferred position
+    #         start_idx_nonpref = max(0, non_preferred_idx_approx - 5)
+    #         end_idx_nonpref = min(n_bins, non_preferred_idx_approx + 5)
+    #         window_profile_nonpref = even_profiles[cell, start_idx_nonpref:end_idx_nonpref]
+    #         window_max_idx_nonpref = np.argmax(window_profile_nonpref)
+    #         non_preferred_idx_even = start_idx_nonpref + window_max_idx_nonpref
+    #         non_preferred_position_even = bin_centers[non_preferred_idx_even]
+    #         non_preferred_resp = window_profile_nonpref[window_max_idx_nonpref]
+
+    #         # Get responses at the adjusted preferred and non-preferred positions from EVEN trials
+    #         Rp = even_profiles[cell, preferred_idx_even]
+    #         Rn = non_preferred_resp  
+
+    #         # Calculate SMI
+    #         if Rp + Rn > 0:  # Avoid division by zero
+    #             SMI = (Rp - Rn) / (Rp + Rn)
+    #             valid_count += 1
+    #         else:
+    #             SMI = 0
+    #             zero_response_count += 1
+    #             valid_cells[cell] = False
+    #             continue
+            
+    #         # Store results - use the adjusted positions from even trials
+    #         SMI_values[cell] = SMI
+    #         preferred_positions[cell] = preferred_position_even
+    #         non_preferred_positions[cell] = non_preferred_position_even
+    #         Rp_values[cell] = Rp
+    #         Rn_values[cell] = Rn
+    #         valid_cells[cell] = True
+            
+    #     # find cells that are true for both reliable_cells and valid_cells
+    #     if reliable_cells is not None:
+    #         reliable_valid_cells = np.logical_and(valid_cells, reliable_cells)
+        
+    #     # Print summary statistics
+    #     print(f"\nSMI calculation summary:")
+    #     print(f"  Total cells: {n_cells}")
+    #     print(f"  Rejected - preferred position outside boundary: {outside_boundary_count} ({outside_boundary_count/n_cells*100:.1f}%)")
+    #     print(f"  Rejected - non-preferred position outside corridor: {nonpref_outside_range_count} ({nonpref_outside_range_count/n_cells*100:.1f}%)")
+    #     print(f"  Rejected - zero response sum: {zero_response_count} ({zero_response_count/n_cells*100:.1f}%)")
+    #     print(f"  Valid cells: {np.sum(valid_cells)} ({np.sum(valid_cells)/n_cells*100:.1f}%)")
+    #     print(f"  Reliable cells: {np.sum(reliable_cells)} ({np.sum(reliable_cells)/n_cells*100:.1f}%)")
+    #     print(f"  Reliable&Valid cells: {np.sum(reliable_valid_cells)} ({np.sum(reliable_valid_cells)/n_cells*100:.1f}%)")
+    #     print()
+        
+    #     # Create result dictionary
+    #     results = {
+    #         'SMI': SMI_values,
+    #         'preferred_positions': preferred_positions,
+    #         'non_preferred_positions': non_preferred_positions,
+    #         'Rp': Rp_values,
+    #         'Rn': Rn_values,
+    #         'valid_cells': valid_cells,
+    #         'reliable_valid_cells': reliable_valid_cells if reliable_cells is not None else None,
+    #         'parameters': {
+    #                 'segment_distance': segment_distance,
+    #                 'exclude_boundary_cm': exclude_boundary_cm,
+    #                 'n_cells': n_cells,
+    #                 'n_trials': n_trials,
+    #                 'n_bins': n_bins,
+    #                 'corridor_length': corridor_length,
+    #                 'min_pos': min_pos,
+    #                 'max_pos': max_pos
+    #             }
+    #     }
+        
+    #     return results
+
+    # @staticmethod
+    # def analyze_layer_specific_SMI(layer_cells, all_smi_results, reliable_cells):
+    #     """
+    #     Analyze layer-specific spatial modulation.
+        
+    #     Parameters:
+    #     -----------
+    #     layer_cells : dict
+    #         Dictionary with indices of cells in each layer
+    #     all_smi_results : dict
+    #         SMI calculation results from calculate_SMI
+    #     reliable_cells : numpy.ndarray
+    #         Boolean array indicating reliable cells
+            
+    #     Returns:
+    #     --------
+    #     layer_results : dict
+    #         Dictionary with SMI results for each layer
+    #     classified_cell_count : int
+    #         Number of reliable valid cells that were classified into layers
+    #     total_reliable_valid_cells : int
+    #         Total number of reliable valid cells
+    #     """
+    #     # Initialize results dictionary for each layer
+    #     layer_results = {}
+    #     reliable_layer_cells_num = {}
+    #     for layer, cells in layer_cells.items():
+    #         reliable_layer_cells = np.intersect1d(np.where(reliable_cells)[0], cells)
+    #         reliable_layer_cells_num[layer] = len(reliable_layer_cells)
+        
+    #     # Get all reliable valid cells
+    #     reliable_valid_cells = np.where(all_smi_results['reliable_valid_cells'])[0]
+    #     total_reliable_valid_cells = len(reliable_valid_cells)
+        
+    #     # Track how many cells we've classified into layers
+    #     classified_cell_count = 0
+        
+    #     # Process each layer
+    #     for layer_name, layer_cell_indices in layer_cells.items():
+    #         # Find reliable valid cells within this layer
+    #         layer_reliable_indices = np.intersect1d(reliable_valid_cells, layer_cell_indices)
+    #         classified_cell_count += len(layer_reliable_indices)
+            
+    #         if len(layer_reliable_indices) == 0:
+    #             print(f"No reliable valid cells found in {layer_name}")
+    #             layer_results[layer_name] = None
+    #             continue
+            
+    #         # Extract SMI values and other metrics directly for these cells
+    #         valid_smi = all_smi_results['SMI'][layer_reliable_indices]
+    #         valid_pref_pos = all_smi_results['preferred_positions'][layer_reliable_indices]
+    #         valid_nonpref_pos = all_smi_results['non_preferred_positions'][layer_reliable_indices]
+    #         valid_rp = all_smi_results['Rp'][layer_reliable_indices]
+    #         valid_rn = all_smi_results['Rn'][layer_reliable_indices]
+            
+    #         # Calculate statistics
+    #         mean_smi = np.mean(valid_smi)
+    #         median_smi = np.median(valid_smi)
+    #         std_smi = np.std(valid_smi)
+    #         sem_smi = stats.sem(valid_smi) if len(valid_smi) > 1 else 0
+            
+    #         # Statistical test against 1 using Wilcoxon signed-rank test
+    #         try:
+    #             w_stat, p_value = stats.wilcoxon(valid_smi - 1) if len(valid_smi) > 1 else (np.nan, np.nan)
+    #             t_stat = w_stat  # Store the W statistic for consistency
+    #         except:
+    #             t_stat, p_value = np.nan, np.nan
+    #             warnings.warn(f"Wilcoxon test failed for layer {layer_name}. This can happen if all values are identical.")
+            
+    #         # Store results
+    #         layer_results[layer_name] = {
+    #             'reliable_valid_cells': layer_reliable_indices,
+    #             'SMI': valid_smi,
+    #             'preferred_positions': valid_pref_pos,
+    #             'non_preferred_positions': valid_nonpref_pos,
+    #             'Rp': valid_rp,
+    #             'Rn': valid_rn,
+    #             'stats': {
+    #                 'mean': mean_smi,
+    #                 'median': median_smi,
+    #                 'std': std_smi,
+    #                 'sem': sem_smi,
+    #                 't_stat': t_stat,
+    #                 'p_value': p_value
+    #             }
+    #         }
+            
+    #         # Print summary
+    #         print(f"{layer_name}: {len(layer_reliable_indices)} / {reliable_layer_cells_num[layer_name]} valid cells")
+    #         print(f"  Mean SMI = {mean_smi:.3f} ± {sem_smi:.3f} (SEM)")
+    #         print(f"  Median SMI = {median_smi:.3f}")
+    #         if not np.isnan(p_value):
+    #             print(f"  Wilcoxon test against 1: W = {t_stat:.3f}, p = {p_value:.5f}")
+    #         print()
+        
+    #     # Check if all reliable valid cells were assigned to a layer
+    #     if classified_cell_count < total_reliable_valid_cells:
+    #         print(f"Warning: {total_reliable_valid_cells - classified_cell_count} reliable valid cells were not assigned to any layer!")
+    #     elif classified_cell_count > total_reliable_valid_cells:
+    #         print(f"Warning: {classified_cell_count - total_reliable_valid_cells} cells were counted multiple times (assigned to multiple layers)!")
+    #     else:
+    #         print(f"All {total_reliable_valid_cells} reliable valid cells were successfully assigned to layers.")
+        
+    #     return layer_results
 
     @staticmethod
     def plot_layer_comparison(layer_results):
@@ -719,109 +838,195 @@ class SpatialModulationIndexLayerSpecific:
         
         return fig
 
+    # @staticmethod
+    # def run_layer_SMI_analysis(normalized_spatial_activity, reliable_cells, 
+    #                           layer_cells, bin_centers, segment_distance=55, 
+    #                           exclude_boundary_cm=10, plot_distribution=True,
+    #                           med_coords=None):
+    #     """
+    #     Run complete layer-specific SMI analysis.
+        
+    #     Parameters:
+    #     -----------
+    #     normalized_spatial_activity : numpy.ndarray
+    #         Normalized activity matrix (n_cells x n_trials x n_spatial_bins)
+    #     reliable_cells : numpy.ndarray
+    #         Boolean array indicating reliable cells
+    #     layer_cells : dict
+    #         Dictionary with indices of cells in each layer
+    #     bin_centers : numpy.ndarray
+    #         Centers of spatial bins
+    #     segment_distance : float
+    #         Distance between repeated segments in the VR environment
+    #     exclude_boundary_cm : float
+    #         Distance from corridor boundaries to exclude for preferred positions
+    #     plot_distribution : bool
+    #         Whether to plot the layer distribution
+    #     med_coords : numpy.ndarray or None
+    #         Median coordinates of cells (cells x dimensions), needed for plotting if plot_distribution=True
+            
+    #     Returns:
+    #     --------
+    #     layer_results : dict
+    #         Dictionary with SMI results for each layer
+    #     """
+    #     # Print information about input data
+    #     print(f"Input data shape: {normalized_spatial_activity.shape}")
+    #     # print(f"Number of reliable cells: {np.sum(reliable_cells)}")
+    #     # print(f"Bin centers shape: {bin_centers.shape}")
+    #     # print(f"Bin centers range: {np.min(bin_centers):.2f} to {np.max(bin_centers):.2f}")
+        
+    #     # Print information about layer cells
+    #     for layer, cells in layer_cells.items():
+    #         reliable_layer_cells = np.intersect1d(np.where(reliable_cells)[0], cells)
+    #         print(f"{layer}: {len(cells)} cells, {len(reliable_layer_cells)} reliable")
+        
+    #     # Calculate SMI for all reliable cells
+    #     print(f"\nCalculating SMI with segment_distance={segment_distance}, exclude_boundary_cm={exclude_boundary_cm}")
+    #     all_smi_results = SpatialModulationIndexLayerSpecific.calculate_SMI(
+    #         normalized_spatial_activity, 
+    #         bin_centers, 
+    #         reliable_cells=reliable_cells,
+    #         segment_distance=segment_distance,
+    #         exclude_boundary_cm=exclude_boundary_cm
+    #     )
+        
+    #     if all_smi_results is None:
+    #         print("SMI calculation failed!")
+    #         return None
+        
+    #     # If no valid cells, try reducing the boundary exclusion
+    #     if np.sum(all_smi_results['valid_cells']) == 0:
+    #         print("\nNo valid cells found. Trying with reduced boundary exclusion...")
+    #         exclude_boundary_cm = 5
+    #         all_smi_results = SpatialModulationIndexLayerSpecific.calculate_SMI(
+    #             normalized_spatial_activity, 
+    #             bin_centers, 
+    #             reliable_cells=reliable_cells,
+    #             segment_distance=segment_distance,
+    #             exclude_boundary_cm=exclude_boundary_cm
+    #         )
+            
+    #         # If still no valid cells, try again with even smaller boundary
+    #         if np.sum(all_smi_results['valid_cells']) == 0:
+    #             print("\nStill no valid cells. Trying with minimal boundary exclusion...")
+    #             exclude_boundary_cm = 1
+    #             all_smi_results = SpatialModulationIndexLayerSpecific.calculate_SMI(
+    #                 normalized_spatial_activity, 
+    #                 bin_centers, 
+    #                 segment_distance=segment_distance,
+    #                 exclude_boundary_cm=exclude_boundary_cm
+    #             )
+        
+    #     reliable_valid_cells = np.where(all_smi_results['reliable_valid_cells'])[0]
+    #     # print(f"reliable_valid_cells: {reliable_valid_cells}")
+        
+    #     # Now calculate SMI for each layer
+    #     layer_results = SpatialModulationIndexLayerSpecific.analyze_layer_specific_SMI(layer_cells, all_smi_results, reliable_cells)
+
+    #     # Plot comparison if there are valid results
+    #     valid_layers = [layer for layer, results in layer_results.items() 
+    #                    if results is not None and len(results['SMI']) > 0]
+        
+    #     if len(valid_layers) > 0:
+    #         print("\nGenerating comparison plots...")
+    #         SpatialModulationIndexLayerSpecific.plot_layer_comparison(layer_results)
+    #     else:
+    #         print("\nNo valid layers for visualization")
+            
+    #     # Plot cell distribution if requested
+    #     if plot_distribution and med_coords is not None:
+    #         print("\nPlotting layer distribution...")
+    #         SpatialModulationIndexLayerSpecific.plot_layer_distribution(med_coords, layer_cells, reliable_cells)
+        
+    #     return layer_results, reliable_valid_cells
+    
     @staticmethod
-    def run_layer_SMI_analysis(normalized_spatial_activity, reliable_cells, 
-                              layer_cells, bin_centers, segment_distance=55, 
-                              exclude_boundary_cm=10, plot_distribution=True,
-                              med_coords=None):
+    def run_layer_SMI_analysis(smi_results, reliable_cells, med_coords, layer_cells,
+                                            normalized_spatial_activity=None, bin_centers=None):
         """
-        Run complete layer-specific SMI analysis.
+        Complete workflow for layer-specific SMI analysis using pre-calculated SMI values.
         
         Parameters:
         -----------
-        normalized_spatial_activity : numpy.ndarray
-            Normalized activity matrix (n_cells x n_trials x n_spatial_bins)
+        smi_results : dict
+            Dictionary containing results from SpatialModulationIndex.py calculations
         reliable_cells : numpy.ndarray
             Boolean array indicating reliable cells
-        layer_cells : dict
-            Dictionary with indices of cells in each layer
-        bin_centers : numpy.ndarray
-            Centers of spatial bins
-        segment_distance : float
-            Distance between repeated segments in the VR environment
-        exclude_boundary_cm : float
-            Distance from corridor boundaries to exclude for preferred positions
-        plot_distribution : bool
-            Whether to plot the layer distribution
-        med_coords : numpy.ndarray or None
-            Median coordinates of cells (cells x dimensions), needed for plotting if plot_distribution=True
+        med_coords : numpy.ndarray
+            Median coordinates of cells (cells x dimensions)
+        normalized_spatial_activity : numpy.ndarray, optional
+            Normalized activity matrix, used for visualization
+        bin_centers : numpy.ndarray, optional
+            Centers of spatial bins, used for visualization
             
         Returns:
         --------
         layer_results : dict
-            Dictionary with SMI results for each layer
+            Dictionary with SMI results organized by layer
+        layer_cells : dict
+            Dictionary with indices of cells in each layer
         """
-        # Print information about input data
-        print(f"Input data shape: {normalized_spatial_activity.shape}")
-        # print(f"Number of reliable cells: {np.sum(reliable_cells)}")
-        # print(f"Bin centers shape: {bin_centers.shape}")
-        # print(f"Bin centers range: {np.min(bin_centers):.2f} to {np.max(bin_centers):.2f}")
-        
         # Print information about layer cells
         for layer, cells in layer_cells.items():
             reliable_layer_cells = np.intersect1d(np.where(reliable_cells)[0], cells)
             print(f"{layer}: {len(cells)} cells, {len(reliable_layer_cells)} reliable")
         
-        # Calculate SMI for all reliable cells
-        print(f"\nCalculating SMI with segment_distance={segment_distance}, exclude_boundary_cm={exclude_boundary_cm}")
-        all_smi_results = SpatialModulationIndexLayerSpecific.calculate_SMI(
-            normalized_spatial_activity, 
-            bin_centers, 
-            reliable_cells=reliable_cells,
-            segment_distance=segment_distance,
-            exclude_boundary_cm=exclude_boundary_cm
-        )
+        # # Step 1: Identify cortical layers
+        # print("Identifying cortical layers based on cell coordinates...")
+        # layer_cells, layer_boundaries = SpatialModulationIndexLayerSpecific.identify_layers(med_coords)
         
-        if all_smi_results is None:
-            print("SMI calculation failed!")
-            return None
+        # Step 2: Analyze pre-calculated SMI values by layer
+        print("\nAnalyzing pre-calculated SMI values by layer...")
+        layer_results = SpatialModulationIndexLayerSpecific.analyze_layer_specific_smi_from_existing_results(smi_results, layer_cells, reliable_cells)
         
-        # If no valid cells, try reducing the boundary exclusion
-        if np.sum(all_smi_results['valid_cells']) == 0:
-            print("\nNo valid cells found. Trying with reduced boundary exclusion...")
-            exclude_boundary_cm = 5
-            all_smi_results = SpatialModulationIndexLayerSpecific.calculate_SMI(
-                normalized_spatial_activity, 
-                bin_centers, 
-                reliable_cells=reliable_cells,
-                segment_distance=segment_distance,
-                exclude_boundary_cm=exclude_boundary_cm
-            )
-            
-            # If still no valid cells, try again with even smaller boundary
-            if np.sum(all_smi_results['valid_cells']) == 0:
-                print("\nStill no valid cells. Trying with minimal boundary exclusion...")
-                exclude_boundary_cm = 1
-                all_smi_results = SpatialModulationIndexLayerSpecific.calculate_SMI(
-                    normalized_spatial_activity, 
-                    bin_centers, 
-                    segment_distance=segment_distance,
-                    exclude_boundary_cm=exclude_boundary_cm
-                )
-        
-        reliable_valid_cells = np.where(all_smi_results['reliable_valid_cells'])[0]
-        # print(f"reliable_valid_cells: {reliable_valid_cells}")
-        
-        # Now calculate SMI for each layer
-        layer_results = SpatialModulationIndexLayerSpecific.analyze_layer_specific_SMI(layer_cells, all_smi_results, reliable_cells)
-
-        # Plot comparison if there are valid results
+        # Step 3: Create comparative plots for layer-specific SMI results
+        print("\nGenerating comparison plots...")
         valid_layers = [layer for layer, results in layer_results.items() 
-                       if results is not None and len(results['SMI']) > 0]
+                    if results is not None and len(results['SMI']) > 0]
         
         if len(valid_layers) > 0:
-            print("\nGenerating comparison plots...")
             SpatialModulationIndexLayerSpecific.plot_layer_comparison(layer_results)
         else:
-            print("\nNo valid layers for visualization")
+            print("No valid layers for visualization")
+        
+        # # Step 4: Visualize cell distribution by layer (if FOV is available)
+        # if 'FOV' in locals() or 'FOV' in globals():
+        #     print("\nPlotting layer distribution...")
+        #     SpatialModulationIndexLayerSpecific.plot_layer_distribution(med_coords, layer_cells, reliable_cells, FOV)
+        
+        # Step 5: Create the enhanced layer-specific visualization
+        print("\nCreating enhanced layer visualization...")
+        # Extract SMI values for all cells (fill with NaN for invalid cells)
+        all_smi = np.full(len(reliable_cells), np.nan)
+        for layer_name, results in layer_results.items():
+            if results is not None:
+                all_smi[results['reliable_valid_cells']] = results['SMI']
+        
+        # Create the enhanced visualization
+        SpatialModulationIndexLayerSpecific.plot_layer_smi_comparison_final(
+            med_coords=med_coords, 
+            layer_cells=layer_cells, 
+            smi_values=all_smi, 
+            reliable_cells=reliable_cells, 
+            fig_title="Layer-specific Spatial Modulation"
+        )
+        
+        # # Step 6: Visualize top cells from each layer (if activity data is available)
+        # if normalized_spatial_activity is not None and bin_centers is not None:
+        #     print("\nVisualizing top spatially modulated cells by layer...")
+        #     for layer_name in valid_layers:
+        #         print(f"\nTop cells in {layer_name}:")
+        #         SpatialModulationIndexLayerSpecific.visualize_top_cells(
+        #             normalized_spatial_activity, 
+        #             layer_results, 
+        #             layer_name, 
+        #             bin_centers, 
+        #             top_n=5
+        #         )
+        
+        return layer_results, layer_cells
             
-        # Plot cell distribution if requested
-        if plot_distribution and med_coords is not None:
-            print("\nPlotting layer distribution...")
-            SpatialModulationIndexLayerSpecific.plot_layer_distribution(med_coords, layer_cells, reliable_cells)
-        
-        return layer_results, reliable_valid_cells
-        
     @staticmethod
     def visualize_top_cells(normalized_spatial_activity, layer_results, layer_name, bin_centers, top_n=5):
         """
@@ -1047,12 +1252,11 @@ class SpatialModulationIndexLayerSpecific:
         # Add one example for each layer
         for layer_name in active_layers:
             base_color = layer_colors[layer_name]
-            
             # Add examples for different SMI ranges
             legend_elements.append(plt.Line2D([0], [0], marker='o', color='w', 
                                         markerfacecolor=base_color, markersize=8,
                                         markeredgecolor='black', markeredgewidth=0.5,
-                                        label=f"{layer_name} ({len(valid_reliable_cells)} cells)"))
+                                        label=f"{layer_name} ({np.size(valid_reliable_cells)} cells)"))
         
         # Add size/color examples for SMI levels
         example_layer = active_layers[0]  # Just use the first layer for examples
