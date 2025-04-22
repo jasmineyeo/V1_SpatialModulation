@@ -66,11 +66,6 @@ class SpatialModulationIndexLayerSpecific:
         layer6_upper = layer5_lower
         layer6_lower = np.max(med_coords[:, 0])
         
-        print(f'Layer 2/3 range: {layer23_upper} to {layer23_lower}')
-        print(f'Layer 4 range: {layer4_upper} to {layer4_lower}')
-        print(f'Layer 5 range: {layer5_upper} to {layer5_lower}')
-        print(f'Layer 6 range: {layer6_upper} to {layer6_lower}')
-        
         # Get indices of cells in each layer
         layer23_cells = np.where((med_coords[:, 0] >= layer23_upper) & (med_coords[:, 0] < layer23_lower))[0]
         layer4_cells = np.where((med_coords[:, 0] >= layer4_upper) & (med_coords[:, 0] < layer4_lower))[0]
