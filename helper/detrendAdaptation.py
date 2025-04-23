@@ -279,7 +279,7 @@ class detrendAdaptation:
             return popt, fit_curve, peak_position, peak_response, True
             
         except (RuntimeError, ValueError) as e:
-            print(f"Fitting failed at index {initial_peak_idx}: {str(e)}")
+            # print(f"Fitting failed at index {initial_peak_idx}: {str(e)}")
             # Fall back to the original peak if fitting fails
             return None, None, bin_centers[initial_peak_idx], profile[initial_peak_idx], False
 
@@ -489,181 +489,6 @@ class detrendAdaptation:
         
         return results
 
-    # @staticmethod
-    # def calculate_detrended_SMI(detrended_activity, bin_centers, reliable_cells, segment_distance=52, exclude_boundary_cm=4):
-    #     """
-    #     Calculate Spatial Modulation Index (SMI) on detrended activity.
-        
-    #     Parameters:
-    #     -----------
-    #     detrended_activity : numpy.ndarray
-    #         Activity with time component removed (cells x trials x spatial_bins)
-    #     bin_centers : numpy.ndarray
-    #         Centers of spatial bins
-    #     reliable_cells : numpy.ndarray
-    #         Boolean array indicating reliable cells
-    #     segment_distance : float
-    #         Distance between visually identical positions
-    #     exclude_boundary_cm : float
-    #         Distance from corridor boundaries to exclude
-            
-    #     Returns:
-    #     --------
-    #     results : dict
-    #         Dictionary with SMI calculation results
-    #     """
-    #     print("\nCalculating SMI on detrended activity...")
-        
-    #     n_cells, n_trials, n_bins = detrended_activity.shape
-
-    #     # Print debugging information
-    #     print(f"  Number of cells: {n_cells}")
-    #     print(f"  Number of reliable cells: {np.sum(reliable_cells)}")
-    #     print(f"  Number of trials: {n_trials}")
-    #     print(f"  Number of spatial bins: {n_bins}")
-    #     print(f"  Bin centers range: {np.min(bin_centers):.2f} to {np.max(bin_centers):.2f}")
-    #     print(f"  Segment distance: {segment_distance}")
-    #     print(f"  Exclude boundary (cm): {exclude_boundary_cm}")
-        
-    #     # Separate odd and even trials
-    #     odd_indices = np.arange(0, n_trials, 2)
-    #     even_indices = np.arange(1, n_trials, 2)
-        
-    #     # Calculate corridor boundaries
-    #     min_pos = np.min(bin_centers)
-    #     max_pos = np.max(bin_centers)
-    #     corridor_length = np.max(bin_centers) - min_pos
-        
-    #     # Calculate boundary positions in the original coordinate system
-    #     min_allowed = min_pos + exclude_boundary_cm
-    #     max_allowed = max_pos - exclude_boundary_cm
-    #     print(f"  Corridor length: {corridor_length:.2f}")
-    #     print(f"  Valid position range: {min_allowed:.2f} to {max_allowed:.2f}")
-            
-    #     # Compute response profiles for odd and even trials
-    #     odd_profiles = np.mean(detrended_activity[:, odd_indices, :], axis=1)
-    #     even_profiles = np.mean(detrended_activity[:, even_indices, :], axis=1)
-    
-    #     # Initialize arrays to store results
-    #     SMI_values = np.zeros(n_cells)
-    #     preferred_positions = np.zeros(n_cells)
-    #     non_preferred_positions = np.zeros(n_cells)
-    #     Rp_values = np.zeros(n_cells)
-    #     Rn_values = np.zeros(n_cells)
-    #     valid_cells = np.zeros(n_cells, dtype=bool)
-
-    #     # Count various rejection reasons
-    #     outside_boundary_count = 0
-    #     nonpref_outside_range_count = 0
-    #     zero_response_count = 0
-    #     valid_count = 0
-        
-    #     for cell in range(n_cells):
-    #     # Find the preferred position from odd trials
-    #         preferred_idx_odd = np.argmax(odd_profiles[cell])
-    #         preferred_position_odd = bin_centers[preferred_idx_odd]
-
-    #         # Check if the preferred position is within allowed boundaries
-    #         if preferred_position_odd < min_allowed or preferred_position_odd > max_allowed:
-    #             outside_boundary_count += 1
-    #             valid_cells[cell] = False
-    #             continue
-
-    #         # Find the maximum response in even trials within ±5 indices from preferred_idx_odd
-    #         start_idx_pref = max(0, preferred_idx_odd - 5)
-    #         end_idx_pref = min(n_bins, preferred_idx_odd + 5)
-    #         window_profile_pref = even_profiles[cell, start_idx_pref:end_idx_pref]
-    #         window_max_idx_pref = np.argmax(window_profile_pref)
-    #         preferred_idx_even = start_idx_pref + window_max_idx_pref
-    #         preferred_position_even = bin_centers[preferred_idx_even]
-
-    #         # Calculate the non-preferred position (both possibilities)
-    #         corridor_midpoint = min_pos + corridor_length / 2
-    #         if preferred_position_even < corridor_midpoint:
-    #             # If in first segment, the non-preferred position is in second segment
-    #             non_preferred_position_approx = preferred_position_even + segment_distance
-    #         else:
-    #             # If in second segment, the non-preferred position is in first segment
-    #             non_preferred_position_approx = preferred_position_even - segment_distance
-
-    #         # Check if non-preferred position is within corridor bounds
-    #         max_pos = np.max(bin_centers)
-    #         if non_preferred_position_approx < min_pos or non_preferred_position_approx > max_pos:
-    #             nonpref_outside_range_count += 1
-    #             valid_cells[cell] = False
-    #             continue
-
-    #         # Find the closest bin to the non-preferred position
-    #         non_preferred_idx_approx = np.argmin(np.abs(bin_centers - non_preferred_position_approx))
-
-    #         # Find the maximum response within ±5 indices of the non-preferred position
-    #         start_idx_nonpref = max(0, non_preferred_idx_approx - 5)
-    #         end_idx_nonpref = min(n_bins, non_preferred_idx_approx + 5)
-    #         window_profile_nonpref = even_profiles[cell, start_idx_nonpref:end_idx_nonpref]
-    #         window_max_idx_nonpref = np.argmax(window_profile_nonpref)
-    #         non_preferred_idx_even = start_idx_nonpref + window_max_idx_nonpref
-    #         non_preferred_position_even = bin_centers[non_preferred_idx_even]
-    #         non_preferred_resp = window_profile_nonpref[window_max_idx_nonpref]
-
-    #         # Get responses at the adjusted preferred and non-preferred positions from EVEN trials
-    #         Rp = even_profiles[cell, preferred_idx_even]
-    #         Rn = non_preferred_resp  
-
-    #         # Calculate SMI
-    #         if Rp + Rn > 0:  # Avoid division by zero
-    #             SMI = (Rp - Rn) / (Rp + Rn)
-    #             valid_count += 1
-    #         else:
-    #             SMI = 0
-    #             zero_response_count += 1
-    #             valid_cells[cell] = False
-    #             continue
-            
-    #         # Store results - use the adjusted positions from even trials
-    #         SMI_values[cell] = SMI
-    #         preferred_positions[cell] = preferred_position_even
-    #         non_preferred_positions[cell] = non_preferred_position_even
-    #         Rp_values[cell] = Rp
-    #         Rn_values[cell] = Rn
-    #         valid_cells[cell] = True
-    #     print(f"Number of total cells: {n_cells} and number of valid cells: {valid_cells.shape}")      
-
-    #     # find cells that are true for both reliable_cells and valid_cells
-    #     if reliable_cells is not None:
-    #         reliable_valid_cells = np.logical_and(valid_cells, reliable_cells)
-        
-        
-    #     # Print summary statistics
-    #     print(f"\nDetrended SMI calculation summary:")
-    #     print(f"  Total cells: {n_cells}")
-    #     print(f"  Reliable&Valid cells: {np.sum(reliable_valid_cells)} ({np.sum(reliable_valid_cells)/n_cells*100:.1f}%)")
-    #     print(f"  Rejected - preferred position outside boundary: {outside_boundary_count} ({outside_boundary_count/len(reliable_valid_cells)*100:.1f}%)")
-    #     print(f"  Rejected - non-preferred position outside corridor: {nonpref_outside_range_count} ({nonpref_outside_range_count/len(reliable_valid_cells)*100:.1f}%)")
-    #     print(f"  Rejected - zero response sum: {zero_response_count} ({zero_response_count/len(reliable_valid_cells)*100:.1f}%)")
-        
-    #     # Create result dictionary
-    #     results = {
-    #         'SMI': SMI_values,
-    #         'preferred_positions': preferred_positions,
-    #         'non_preferred_positions': non_preferred_positions,
-    #         'Rp': Rp_values,
-    #         'Rn': Rn_values,
-    #         'valid_cells': valid_cells,
-    #         'reliable_valid_cells': reliable_valid_cells if reliable_cells is not None else None,
-    #         'parameters': {
-    #             'segment_distance': segment_distance,
-    #             'exclude_boundary_cm': exclude_boundary_cm,
-    #             'n_cells': n_cells,
-    #             'n_trials': n_trials,
-    #             'n_bins': n_bins,
-    #             'corridor_length': corridor_length,
-    #             'min_pos': min_pos,
-    #             'max_pos': max_pos
-    #         }
-    #     }
-        
-    #     return results
-   
     @staticmethod
     def analyze_layer_specific_detrended_SMI(detrended_smi_results, layer_cells, reliable_cells):
         """
@@ -803,12 +628,23 @@ class detrendAdaptation:
         
         boxplot_data = []
         layer_names = []
-        
+        mean_values = []
+        sem_values = []
+    
         for layer_name, results in layer_results.items():
             if results is not None and len(results['SMI']) > 0:
                 boxplot_data.append(results['SMI'])
                 layer_names.append(f"{layer_name}\n(n={results['reliable_valid_cells'].size})")
+                # Calculate statistics directly from the same data
+                mean_values.append(np.mean(results['SMI']))
+                sem_values.append(stats.sem(results['SMI']))
         
+        
+        # Print values to verify
+        print("Values being used in both plots:")
+        for i, layer in enumerate(layer_names):
+            print(f"  {layer}: mean={mean_values[i]:.3f}, sem={sem_values[i]:.3f}")
+    
         boxplot = ax1.boxplot(boxplot_data, patch_artist=True)
         
         # Add colors to boxes
@@ -824,19 +660,16 @@ class detrendAdaptation:
         # Plot 2: Bar plot with error bars
         ax2 = fig.add_subplot(gs[0, 1])
         
-        means = [results['stats']['mean'] for layer, results in layer_results.items() 
-                if results is not None and len(results['SMI']) > 0]
-        sems = [results['stats']['sem'] for layer, results in layer_results.items() 
-                if results is not None and len(results['SMI']) > 0]
+        # Use the same calculated values for the bar chart
+        bars = ax2.bar(range(len(mean_values)), mean_values, yerr=sem_values, 
+                    capsize=10, color=colors[:len(mean_values)])
         
-        bars = ax2.bar(range(len(means)), means, yerr=sems, capsize=10, color=colors[:len(means)])
-        
-        ax2.set_xticks(range(len(means)))
+        ax2.set_xticks(range(len(mean_values)))
         ax2.set_xticklabels(layer_names)
         ax2.axhline(0, color='k', linestyle='--', alpha=0.5)
         ax2.set_title('Mean Detrended SMI by Layer')
         ax2.set_ylabel('Mean SMI ± SEM')
-        
+            
         # Plot 3: Histogram of SMI distribution by layer
         ax3 = fig.add_subplot(gs[0, 2])
         
@@ -904,6 +737,116 @@ class detrendAdaptation:
         
         plt.tight_layout()
         plt.show()
+    # @staticmethod
+    # def visualize_layer_specific_smi(layer_results, reliable_cells, layer_cells):
+    #     """
+    #     Create visualization for layer-specific SMI results with consistent data processing.
+    #     """
+    #     # Setup figure
+    #     fig = plt.figure(figsize=(18, 12))
+    #     gs = GridSpec(2, 3, figure=fig, width_ratios=[4, 3, 4], height_ratios=[1, 4], wspace=0.25, hspace=0.2)
+        
+    #     # Create a standardized data structure to ensure consistency
+    #     layer_stats = {}
+    #     layer_names_list = []
+    #     boxplot_data = []
+        
+    #     # Process data once to ensure consistency
+    #     for layer_name, results in layer_results.items():
+    #         if results is not None and len(results['smi_values']) > 0:
+    #             # Store all relevant statistics in one place
+    #             layer_stats[layer_name] = {
+    #                 'data': results['SMI'],
+    #                 'n_cells': results['n_cells'],
+    #                 'mean': results['stats']['mean'],
+    #                 'median': results['stats']['median'],
+    #                 'sem': results['stats']['sem'],
+    #                 'p_value': results['stats']['p_value'] if 'p_value' in results['stats'] else None
+    #             }
+                
+    #             # Create formatted layer name with sample size
+    #             formatted_name = f"{layer_name}\n(n={results['n_cells']})"
+    #             layer_names_list.append(formatted_name)
+                
+    #             # Add data for boxplot
+    #             boxplot_data.append(results['smi_values'])
+        
+    #     # Define colors consistently
+    #     colors = ['lightblue', 'lightgreen', 'salmon', 'plum']
+        
+    #     # Plot 1: Box plot of SMI by layer
+    #     ax1 = fig.add_subplot(gs[1, 0])
+        
+    #     # Create boxplot with consistent data
+    #     boxplot = ax1.boxplot(boxplot_data, patch_artist=True)
+        
+    #     # Add colors to boxes
+    #     for patch, color in zip(boxplot['boxes'], colors[:len(boxplot_data)]):
+    #         patch.set_facecolor(color)
+        
+    #     ax1.set_xticklabels(layer_names_list)
+    #     ax1.axhline(0, color='k', linestyle='--', alpha=0.5)
+    #     ax1.set_title('Detrended SMI by Layer')
+    #     ax1.set_ylabel('Spatial Modulation Index')
+        
+    #     # Plot 2: Bar plot with error bars
+    #     ax2 = fig.add_subplot(gs[1, 1])
+        
+    #     # Extract data consistently from our processed structure
+    #     means = [stats['mean'] for layer, stats in layer_stats.items()]
+    #     sems = [stats['sem'] for layer, stats in layer_stats.items()]
+        
+    #     # Print values for debugging
+    #     print("Layer means for bar chart:")
+    #     for layer, mean, sem in zip(layer_stats.keys(), means, sems):
+    #         print(f"  {layer}: {mean:.3f} ± {sem:.3f}")
+        
+    #     # Create bar chart
+    #     bars = ax2.bar(range(len(means)), means, yerr=sems, capsize=10, color=colors[:len(means)])
+        
+    #     ax2.set_xticks(range(len(means)))
+    #     ax2.set_xticklabels(layer_names_list)
+    #     ax2.axhline(0, color='k', linestyle='--', alpha=0.5)
+    #     ax2.set_title('Mean Detrended SMI by Layer')
+    #     ax2.set_ylabel('Mean SMI ± SEM')
+        
+    #     # Plot 3: Histogram of SMI distribution by layer
+    #     ax3 = fig.add_subplot(gs[1, 2])
+        
+    #     for i, (layer_name, stats) in enumerate(layer_stats.items()):
+    #         # Create histogram
+    #         ax3.hist(stats['data'], bins=15, alpha=0.6, color=colors[i], label=layer_name)
+        
+    #     ax3.axvline(0, color='k', linestyle='--', alpha=0.5)
+    #     ax3.set_title('Distribution of Detrended SMI')
+    #     ax3.set_xlabel('SMI Value')
+    #     ax3.set_ylabel('Count')
+    #     ax3.legend()
+        
+    #     # Add title for entire figure
+    #     fig.suptitle('Layer-Specific Spatial Modulation Analysis', fontsize=16, y=0.98)
+        
+    #     # Add summary statistics to top panel
+    #     ax_summary = fig.add_subplot(gs[0, :])
+    #     ax_summary.axis('off')  # Hide axes
+        
+    #     # Create a text summary of key findings
+    #     summary_text = "Summary Statistics:\n"
+    #     for i, (layer, stats) in enumerate(layer_stats.items()):
+    #         p_value_text = f"p={stats['p_value']:.4f}" if stats['p_value'] is not None else "p=N/A"
+    #         summary_text += f"{layer}: mean={stats['mean']:.3f} ± {stats['sem']:.3f}, median={stats['median']:.3f}, {p_value_text}\n"
+        
+    #     ax_summary.text(0.5, 0.5, summary_text, horizontalalignment='center', 
+    #                 verticalalignment='center', transform=ax_summary.transAxes,
+    #                 bbox=dict(facecolor='white', alpha=0.8, boxstyle='round'))
+        
+    #     plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust for suptitle
+        
+    #     # Print overall summary for verification
+    #     overall_mean = np.mean([np.mean(data) for data in boxplot_data])
+    #     print(f"\nOverall mean SMI across all layers: {overall_mean:.3f}")
+        
+    #     return fig
 
     @staticmethod
     def run_adaptation_corrected_smi_analysis(spatial_activity, bin_centers, reliable_cells, layer_cells, segment_distance=52, exclude_boundary_cm=4):
