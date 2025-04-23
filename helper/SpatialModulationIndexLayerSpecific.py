@@ -118,7 +118,7 @@ class SpatialModulationIndexLayerSpecific:
         SMI_values = smi_results['SMI']
         reliable_valid_cells = smi_results['reliable_valid_cells']
         
-        # Find cells that are both reliable and valid
+        # Find indices of reliable and valid cells
         reliable_valid_indices = np.where(reliable_valid_cells)[0]
         
         print(f"Total cells: {len(SMI_values)} and reliable & valid cells: {np.sum(reliable_valid_cells)}")
@@ -1244,14 +1244,14 @@ class SpatialModulationIndexLayerSpecific:
         # Create legend for SMI categories
         legend_elements = []
         
-        # Add one example for each layer
-        for layer_name in active_layers:
-            base_color = layer_colors[layer_name]
-            # Add examples for different SMI ranges
-            legend_elements.append(plt.Line2D([0], [0], marker='o', color='w', 
-                                        markerfacecolor=base_color, markersize=8,
-                                        markeredgecolor='black', markeredgewidth=0.5,
-                                        label=f"{layer_name} ({np.size(valid_reliable_cells)} cells)"))
+        # # Add one example for each layer
+        # for layer_name in active_layers:
+        #     base_color = layer_colors[layer_name]
+        #     # Add examples for different SMI ranges
+        #     legend_elements.append(plt.Line2D([0], [0], marker='o', color='w', 
+        #                                 markerfacecolor=base_color, markersize=8,
+        #                                 markeredgecolor='black', markeredgewidth=0.5,
+        #                                 label=f"{layer_name} ({np.size(valid_reliable_cells)} cells)"))
         
         # Add size/color examples for SMI levels
         example_layer = active_layers[0]  # Just use the first layer for examples
