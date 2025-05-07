@@ -489,6 +489,338 @@ class detrendAdaptation:
         
         return results
 
+    @staticmethod    
+    def calculate_detrended_SMI_BBBB(spatial_activity, bin_centers, reliable_cells, segment_distances=[20, 40], exclude_boundary_cm=0):
+        """
+        Calculate the Spatial Modulation Index (SMI) using cross-validation approach with Gaussian fitting:
+        - Odd trials to find preferred position
+        - Even trials to measure responses at preferred and non-preferred positions
+        - SMI = (Rp - Rn) / (Rp + Rn)
+        
+        With three landmarks, creating multiple possible non-preferred positions.
+        Where Rp = response at preferred position, Rn = response at non-preferred position.
+        """
+        n_cells, n_trials, n_bins = spatial_activity.shape
+        
+        # RANDOM HALVES instead of odd/even
+        odd_indices = np.random.choice(n_trials, n_trials // 2, replace=False)
+        even_indices = np.setdiff1d(np.arange(n_trials), odd_indices)
+        
+        # Calculate corridor boundaries
+        min_pos = np.min(bin_centers)
+        max_pos = np.max(bin_centers)
+        corridor_length = max_pos - min_pos
+        
+        # Calculate boundary positions in the original coordinate system
+        min_allowed = min_pos + exclude_boundary_cm
+        max_allowed = max_pos - exclude_boundary_cm
+        print(f"  Corridor length: {corridor_length:.2f} and valid position range: {min_allowed:.2f} to {max_allowed:.2f}")
+            
+        # Compute response profiles for odd and even trials
+        odd_profiles = np.mean(spatial_activity[:, odd_indices, :], axis=1)
+        even_profiles = np.mean(spatial_activity[:, even_indices, :], axis=1)
+        
+        # Initialize arrays to store results
+        SMI_values = np.zeros(n_cells)
+        preferred_positions = np.zeros(n_cells)
+        non_preferred_positions = np.zeros(n_cells)
+        Rp_values = np.zeros(n_cells)
+        Rn_values = np.zeros(n_cells)
+        valid_cells = np.zeros(n_cells, dtype=bool)
+        
+        # Store fitted curves for visualization
+        preferred_fitted_curves = np.zeros((n_cells, n_bins))
+        non_preferred_fitted_curves = np.zeros((n_cells, n_bins))
+        fitting_success = np.zeros((n_cells, 2), dtype=bool)  # [0] for preferred, [1] for non-preferred
+        
+        # Track which landmark segment the preferred position falls near
+        landmark_segment = np.zeros(n_cells, dtype=int)  # 0=first, 1=second, 2=third
+        
+        # Store all potential non-preferred positions and responses for visualization
+        all_potential_nonpref = np.zeros((n_cells, len(segment_distances) * 2, 3))  # [cell, option, [position, response, valid]]
+
+        # Count various rejection reasons
+        outside_boundary_count = 0
+        nonpref_outside_range_count = 0
+        zero_response_count = 0
+        fitting_failed_count = 0
+        valid_count = 0
+        
+        # Define the landmarks (assuming they're evenly spaced)
+        corridor_third = corridor_length / 3
+        landmark_positions = [
+            min_pos + corridor_third,         # First landmark
+            min_pos + 2 * corridor_third,     # Second landmark
+            max_pos                           # Third landmark
+        ]
+        
+        for cell in range(n_cells):
+            # Find the initial preferred position from odd trials
+            preferred_idx_odd = np.argmax(odd_profiles[cell])
+            preferred_position_odd = bin_centers[preferred_idx_odd]
+
+            # Check if the preferred position is within allowed boundaries
+            if preferred_position_odd < min_allowed or preferred_position_odd > max_allowed:
+                outside_boundary_count += 1
+                valid_cells[cell] = False
+                continue
+
+            # Define a window around the peak in odd trials for more precise localization
+            # Fit a double Gaussian to the odd trials profile to find a smoother peak
+            popt_odd, fit_curve_odd, preferred_position_fitted_odd, _, fit_success_odd = detrendAdaptation.fit_response_profile(
+                bin_centers, odd_profiles[cell], preferred_idx_odd, window_size=5
+            )
+            
+            # Find the closest bin to the fitted preferred position
+            preferred_idx_odd_fitted = np.argmin(np.abs(bin_centers - preferred_position_fitted_odd))
+            
+            # Now find the corresponding peak in even trials within a window of the refined odd peak
+            start_idx_pref = max(0, preferred_idx_odd_fitted - 1)
+            end_idx_pref = min(n_bins, preferred_idx_odd_fitted + 1)
+            window_profile_pref = even_profiles[cell, start_idx_pref:end_idx_pref]
+            window_max_idx_pref = np.argmax(window_profile_pref)
+            preferred_idx_even_initial = start_idx_pref + window_max_idx_pref
+            
+            # Fit a double Gaussian to the even trials around this peak for the final preferred position
+            popt_even_pref, fit_curve_even_pref, preferred_position_fitted_even, peak_response_even, fit_success_even = detrendAdaptation.fit_response_profile(
+                bin_centers, even_profiles[cell], preferred_idx_even_initial, window_size=5
+            )
+            
+            # Store the fitting success status
+            fitting_success[cell, 0] = fit_success_even
+            
+            # If fitting failed, we can either use the raw peak or skip this cell
+            if not fit_success_even:
+                fitting_failed_count += 1
+                preferred_position_even = bin_centers[preferred_idx_even_initial]
+                Rp = even_profiles[cell, preferred_idx_even_initial]
+            else:
+                # Use the fitted peak position and height
+                preferred_position_even = preferred_position_fitted_even
+                Rp = peak_response_even
+                # Store the fitted curve for visualization
+                preferred_fitted_curves[cell] = fit_curve_even_pref
+
+            # Determine which landmark segment the preferred position is closest to
+            distances_to_landmarks = [abs(preferred_position_even - pos) for pos in landmark_positions]
+            closest_landmark = np.argmin(distances_to_landmarks)
+            landmark_segment[cell] = closest_landmark
+            
+            # Calculate potential non-preferred positions based on which landmark segment we're in
+            non_preferred_positions_list = []
+            
+            if closest_landmark == 0:  # Near first landmark
+                # Non-preferred can be +20 and +40 from preferred
+                for dist in segment_distances:
+                    non_preferred_positions_list.append(preferred_position_even + dist)
+            elif closest_landmark == 1:  # Near second landmark
+                # Non-preferred can be -20 and +20 from preferred
+                non_preferred_positions_list.append(preferred_position_even - segment_distances[0])
+                non_preferred_positions_list.append(preferred_position_even + segment_distances[0])
+            else:  # Near third landmark
+                # Non-preferred can be -20 and -40 from preferred
+                for dist in segment_distances:
+                    non_preferred_positions_list.append(preferred_position_even - dist)
+            
+            # Check if any non-preferred position is outside corridor bounds
+            all_outside = True
+            for pos in non_preferred_positions_list:
+                if min_pos <= pos <= max_pos:
+                    all_outside = False
+                    break
+                    
+            if all_outside:
+                nonpref_outside_range_count += 1
+                valid_cells[cell] = False
+                continue
+            
+            # Process each potential non-preferred position
+            non_preferred_responses = []
+            valid_non_preferred_positions = []
+            fitted_non_preferred_curves = []
+            non_preferred_fit_success = []
+            
+            # Initialize array to store all potential non-preferred positions for this cell
+            cell_potential_nonpref = np.zeros((len(non_preferred_positions_list), 3))
+            
+            for i, non_pref_pos in enumerate(non_preferred_positions_list):
+                # Set default values for invalid positions
+                cell_potential_nonpref[i, 0] = non_pref_pos  # Position
+                cell_potential_nonpref[i, 1] = -1  # Response (invalid)
+                cell_potential_nonpref[i, 2] = 0   # Valid flag (0=invalid)
+                
+                # Skip if outside corridor bounds
+                if non_pref_pos < min_pos or non_pref_pos > max_pos:
+                    continue
+                    
+                # Find the closest bin to this non-preferred position
+                non_preferred_idx_approx = np.argmin(np.abs(bin_centers - non_pref_pos))
+                
+                # Get exact response at this position (no window, just the exact position)
+                exact_response = even_profiles[cell, non_preferred_idx_approx]
+                
+                # Fit a double Gaussian to the non-preferred position response
+                # Use a window to allow finding the precise location
+                start_idx_nonpref = max(0, non_preferred_idx_approx - 5)
+                end_idx_nonpref = min(n_bins, non_preferred_idx_approx + 5)
+                
+                if start_idx_nonpref >= end_idx_nonpref:
+                    continue  # Skip if window is invalid
+                    
+                window_profile_nonpref = even_profiles[cell, start_idx_nonpref:end_idx_nonpref]
+                window_peak_idx = np.argmax(window_profile_nonpref) + start_idx_nonpref
+                
+                popt_even_nonpref, fit_curve, non_preferred_position_fitted, non_preferred_resp_fitted, fit_success_nonpref = detrendAdaptation.fit_response_profile(
+                    bin_centers, even_profiles[cell], window_peak_idx, window_size=5
+                )
+                
+                # If fitting succeeded, use the fitted values
+                if fit_success_nonpref:
+                    # Calculate the distance from the estimated position to the fitted position
+                    distance_from_target = abs(non_pref_pos - non_preferred_position_fitted)
+                    
+                    # Only use the fitted position if it's close to our target position
+                    if distance_from_target <= 5:  # Within 5 units of target
+                        non_preferred_pos_final = non_preferred_position_fitted
+                        non_preferred_resp = non_preferred_resp_fitted
+                        fitted_curve_final = fit_curve
+                        fit_success = True
+                    else:
+                        # If fitted position is too far, use the exact response at the target
+                        non_preferred_pos_final = non_pref_pos
+                        non_preferred_resp = exact_response
+                        fitted_curve_final = np.zeros_like(bin_centers)
+                        fit_success = False
+                else:
+                    # If fitting failed, use the exact response at the target
+                    non_preferred_pos_final = non_pref_pos
+                    non_preferred_resp = exact_response
+                    fitted_curve_final = np.zeros_like(bin_centers)
+                    fit_success = False
+                
+                # Store this position, its response, and its fitted curve
+                valid_non_preferred_positions.append(non_preferred_pos_final)
+                non_preferred_responses.append(non_preferred_resp)
+                fitted_non_preferred_curves.append(fitted_curve_final)
+                non_preferred_fit_success.append(fit_success)
+                
+                # Store for visualization
+                cell_potential_nonpref[i, 0] = non_preferred_pos_final
+                cell_potential_nonpref[i, 1] = non_preferred_resp
+                cell_potential_nonpref[i, 2] = 1  # Valid flag
+            
+            # Store all potential non-preferred positions for this cell
+            if cell < all_potential_nonpref.shape[0]:
+                all_potential_nonpref[cell, :len(cell_potential_nonpref)] = cell_potential_nonpref
+            
+            # If no valid non-preferred positions, skip this cell
+            if len(non_preferred_responses) == 0:
+                nonpref_outside_range_count += 1
+                valid_cells[cell] = False
+                continue
+            
+            # Find the non-preferred position with the SMALLEST response (for maximal contrast)
+            min_resp_idx = np.argmin(non_preferred_responses)
+            Rn = non_preferred_responses[min_resp_idx]
+            non_preferred_position_even = valid_non_preferred_positions[min_resp_idx]
+            
+            # Store the fitted curve for the chosen non-preferred position
+            if non_preferred_fit_success[min_resp_idx]:
+                non_preferred_fitted_curves[cell] = fitted_non_preferred_curves[min_resp_idx]
+                fitting_success[cell, 1] = True
+            else:
+                fitting_success[cell, 1] = False
+            
+            # Calculate SMI - only allow positive SMI values (Rp must be > Rn)
+            if Rp + Rn > 0:  # Avoid division by zero
+                    # SMI = (Rp - Rn) / (Rp + Rn)
+                    # valid_count += 1
+
+                    if Rp - Rn > 0:
+                        SMI = (Rp - Rn) / (Rp + Rn)
+                        valid_count += 1
+                    else:
+                        SMI = 0
+                        zero_response_count += 1
+                        valid_cells[cell] = False
+                        continue
+                    
+            else:
+                # Skip cells where preferred response is not greater than non-preferred
+                SMI = 0
+                zero_response_count += 1
+                valid_cells[cell] = False
+                continue
+            
+            # Store results - use the adjusted positions from even trials
+            SMI_values[cell] = SMI
+            preferred_positions[cell] = preferred_position_even
+            non_preferred_positions[cell] = non_preferred_position_even
+            Rp_values[cell] = Rp
+            Rn_values[cell] = Rn
+            valid_cells[cell] = True
+        
+        print(f"Number of total cells: {n_cells} and number of valid cells: {np.sum(valid_cells)}")      
+        print(f"size of valid_cells: {valid_cells.shape}")
+        print(f"size of reliable_cells: {reliable_cells.shape}")
+        # find cells that are true for both reliable_cells and valid_cells
+        if reliable_cells is not None:
+            reliable_valid_cells = np.logical_and(valid_cells, reliable_cells)
+        else:
+            reliable_valid_cells = valid_cells
+        
+        # Print summary statistics
+        print(f"\nSMI calculation summary:")
+        print(f"  Total cells: {n_cells}")
+        print(f"  Reliable&Valid cells: {np.sum(reliable_valid_cells)} ({np.sum(reliable_valid_cells)/n_cells*100:.1f}%)")
+        print(f"  Rejected - preferred position outside boundary: {outside_boundary_count} ({outside_boundary_count/n_cells*100:.1f}%)")
+        print(f"  Rejected - non-preferred position outside corridor: {nonpref_outside_range_count} ({nonpref_outside_range_count/n_cells*100:.1f}%)")
+        print(f"  Rejected - zero response sum or Rp ≤ Rn: {zero_response_count} ({zero_response_count/n_cells*100:.1f}%)")
+        print(f"  Fitting failed (but used raw peak instead): {fitting_failed_count} ({fitting_failed_count/n_cells*100:.1f}%)")
+        
+        # Calculate segment statistics
+        if np.sum(valid_cells) > 0:
+            segment_counts = np.zeros(3, dtype=int)
+            for i in range(3):
+                segment_counts[i] = np.sum(landmark_segment[valid_cells] == i)
+            
+            print(f"\nPreferred position by landmark segment:")
+            for i in range(3):
+                print(f"  Landmark {i+1}: {segment_counts[i]} cells ({segment_counts[i]/np.sum(valid_cells)*100:.1f}%)")
+            
+        # Create result dictionary
+        results = {
+            'SMI': SMI_values,
+            'preferred_positions': preferred_positions,
+            'non_preferred_positions': non_preferred_positions,
+            'Rp': Rp_values,
+            'Rn': Rn_values,
+            'odd_profiles': odd_profiles,
+            'even_profiles': even_profiles,
+            'preferred_fitted_curves': preferred_fitted_curves,
+            'non_preferred_fitted_curves': non_preferred_fitted_curves,
+            'fitting_success': fitting_success,
+            'landmark_segment': landmark_segment,
+            'min_allowed': min_allowed,
+            'max_allowed': max_allowed,
+            'valid_cells': valid_cells,
+            'reliable_valid_cells': reliable_valid_cells if reliable_cells is not None else None,
+            'all_potential_nonpref': all_potential_nonpref,
+            'parameters': {
+                'segment_distances': segment_distances,
+                'exclude_boundary_cm': exclude_boundary_cm,
+                'n_cells': n_cells,
+                'n_trials': n_trials,
+                'n_bins': n_bins,
+                'corridor_length': corridor_length,
+                'min_pos': min_pos,
+                'max_pos': max_pos,
+                'landmark_positions': landmark_positions
+            }
+        }
+        
+        return results
+
     @staticmethod
     def analyze_layer_specific_detrended_SMI(detrended_smi_results, layer_cells, reliable_cells):
         """
@@ -737,116 +1069,6 @@ class detrendAdaptation:
         
         plt.tight_layout()
         plt.show()
-    # @staticmethod
-    # def visualize_layer_specific_smi(layer_results, reliable_cells, layer_cells):
-    #     """
-    #     Create visualization for layer-specific SMI results with consistent data processing.
-    #     """
-    #     # Setup figure
-    #     fig = plt.figure(figsize=(18, 12))
-    #     gs = GridSpec(2, 3, figure=fig, width_ratios=[4, 3, 4], height_ratios=[1, 4], wspace=0.25, hspace=0.2)
-        
-    #     # Create a standardized data structure to ensure consistency
-    #     layer_stats = {}
-    #     layer_names_list = []
-    #     boxplot_data = []
-        
-    #     # Process data once to ensure consistency
-    #     for layer_name, results in layer_results.items():
-    #         if results is not None and len(results['smi_values']) > 0:
-    #             # Store all relevant statistics in one place
-    #             layer_stats[layer_name] = {
-    #                 'data': results['SMI'],
-    #                 'n_cells': results['n_cells'],
-    #                 'mean': results['stats']['mean'],
-    #                 'median': results['stats']['median'],
-    #                 'sem': results['stats']['sem'],
-    #                 'p_value': results['stats']['p_value'] if 'p_value' in results['stats'] else None
-    #             }
-                
-    #             # Create formatted layer name with sample size
-    #             formatted_name = f"{layer_name}\n(n={results['n_cells']})"
-    #             layer_names_list.append(formatted_name)
-                
-    #             # Add data for boxplot
-    #             boxplot_data.append(results['smi_values'])
-        
-    #     # Define colors consistently
-    #     colors = ['lightblue', 'lightgreen', 'salmon', 'plum']
-        
-    #     # Plot 1: Box plot of SMI by layer
-    #     ax1 = fig.add_subplot(gs[1, 0])
-        
-    #     # Create boxplot with consistent data
-    #     boxplot = ax1.boxplot(boxplot_data, patch_artist=True)
-        
-    #     # Add colors to boxes
-    #     for patch, color in zip(boxplot['boxes'], colors[:len(boxplot_data)]):
-    #         patch.set_facecolor(color)
-        
-    #     ax1.set_xticklabels(layer_names_list)
-    #     ax1.axhline(0, color='k', linestyle='--', alpha=0.5)
-    #     ax1.set_title('Detrended SMI by Layer')
-    #     ax1.set_ylabel('Spatial Modulation Index')
-        
-    #     # Plot 2: Bar plot with error bars
-    #     ax2 = fig.add_subplot(gs[1, 1])
-        
-    #     # Extract data consistently from our processed structure
-    #     means = [stats['mean'] for layer, stats in layer_stats.items()]
-    #     sems = [stats['sem'] for layer, stats in layer_stats.items()]
-        
-    #     # Print values for debugging
-    #     print("Layer means for bar chart:")
-    #     for layer, mean, sem in zip(layer_stats.keys(), means, sems):
-    #         print(f"  {layer}: {mean:.3f} ± {sem:.3f}")
-        
-    #     # Create bar chart
-    #     bars = ax2.bar(range(len(means)), means, yerr=sems, capsize=10, color=colors[:len(means)])
-        
-    #     ax2.set_xticks(range(len(means)))
-    #     ax2.set_xticklabels(layer_names_list)
-    #     ax2.axhline(0, color='k', linestyle='--', alpha=0.5)
-    #     ax2.set_title('Mean Detrended SMI by Layer')
-    #     ax2.set_ylabel('Mean SMI ± SEM')
-        
-    #     # Plot 3: Histogram of SMI distribution by layer
-    #     ax3 = fig.add_subplot(gs[1, 2])
-        
-    #     for i, (layer_name, stats) in enumerate(layer_stats.items()):
-    #         # Create histogram
-    #         ax3.hist(stats['data'], bins=15, alpha=0.6, color=colors[i], label=layer_name)
-        
-    #     ax3.axvline(0, color='k', linestyle='--', alpha=0.5)
-    #     ax3.set_title('Distribution of Detrended SMI')
-    #     ax3.set_xlabel('SMI Value')
-    #     ax3.set_ylabel('Count')
-    #     ax3.legend()
-        
-    #     # Add title for entire figure
-    #     fig.suptitle('Layer-Specific Spatial Modulation Analysis', fontsize=16, y=0.98)
-        
-    #     # Add summary statistics to top panel
-    #     ax_summary = fig.add_subplot(gs[0, :])
-    #     ax_summary.axis('off')  # Hide axes
-        
-    #     # Create a text summary of key findings
-    #     summary_text = "Summary Statistics:\n"
-    #     for i, (layer, stats) in enumerate(layer_stats.items()):
-    #         p_value_text = f"p={stats['p_value']:.4f}" if stats['p_value'] is not None else "p=N/A"
-    #         summary_text += f"{layer}: mean={stats['mean']:.3f} ± {stats['sem']:.3f}, median={stats['median']:.3f}, {p_value_text}\n"
-        
-    #     ax_summary.text(0.5, 0.5, summary_text, horizontalalignment='center', 
-    #                 verticalalignment='center', transform=ax_summary.transAxes,
-    #                 bbox=dict(facecolor='white', alpha=0.8, boxstyle='round'))
-        
-    #     plt.tight_layout(rect=[0, 0, 1, 0.95])  # Adjust for suptitle
-        
-    #     # Print overall summary for verification
-    #     overall_mean = np.mean([np.mean(data) for data in boxplot_data])
-    #     print(f"\nOverall mean SMI across all layers: {overall_mean:.3f}")
-        
-    #     return fig
 
     @staticmethod
     def run_adaptation_corrected_smi_analysis(spatial_activity, bin_centers, reliable_cells, layer_cells, segment_distance=52, exclude_boundary_cm=4):
@@ -887,6 +1109,46 @@ class detrendAdaptation:
         
         return detrended_activity, detrended_smi_results, layer_results
 
+    @staticmethod
+    def run_adaptation_corrected_smi_analysis_BBBB(spatial_activity, bin_centers, reliable_cells, layer_cells, segment_distance=52, exclude_boundary_cm=4):
+        """
+        Run complete analysis of SMI after correcting for adaptation effects.
+        
+        Parameters:
+        -----------
+        spatial_activity : numpy.ndarray
+            Activity matrix (cells x trials x spatial_bins)
+        bin_centers : numpy.ndarray
+            Centers of spatial bins
+        reliable_cells : numpy.ndarray
+            Boolean array indicating reliable cells
+        layer_cells : dict
+            Dictionary with indices of cells in each layer
+        segment_distance : float
+            Distance between visually identical positions
+        exclude_boundary_cm : float
+            Distance from corridor boundaries to exclude
+        """
+        # Step 1: Remove time component (adaptation) from neural activity
+        detrended_activity, time_coefficients, spatial_coefficients, r_squared_values = detrendAdaptation.detrend_time_component(
+            spatial_activity, bin_centers)
+        
+        print(segment_distance, exclude_boundary_cm)
+        # Step 2: Calculate SMI on detrended activity
+        detrended_smi_results = detrendAdaptation.calculate_detrended_SMI_BBBB(
+            detrended_activity, bin_centers, reliable_cells, segment_distances=segment_distance, exclude_boundary_cm = exclude_boundary_cm)
+            # detrended_activity, bin_centers, reliable_cells, segment_distance=40, exclude_boundary_cm=10)
+
+        # Step 3: Analyze layer-specific detrended SMI
+        layer_results = detrendAdaptation.analyze_layer_specific_detrended_SMI(
+            detrended_smi_results, layer_cells, reliable_cells)
+        
+        # # Step 4: Compare time coefficients (adaptation strength) across layers
+        # detrendAdaptation.analyze_layer_specific_adaptation(
+        #     time_coefficients, r_squared_values, layer_cells, reliable_cells)
+        
+        return detrended_activity, detrended_smi_results, layer_results
+    
     @staticmethod
     def analyze_layer_specific_adaptation(time_coefficients, r_squared_values, layer_cells, reliable_cells):
         """

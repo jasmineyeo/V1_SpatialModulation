@@ -51,12 +51,15 @@ def test_cell_reliability(spatial_activity, n_shuffles=1000,
         cell_activity = spatial_activity[cell]
         
         for shuffle in range(n_shuffles):
-            # Random split of trials
-            trial_indices = np.random.permutation(n_trials)
-            split_point = n_trials // 2
-            trials1 = trial_indices[:split_point]
-            trials2 = trial_indices[split_point:]
+            # # Random split of trials
+            # trial_indices = np.random.permutation(n_trials)
+            # split_point = n_trials // 2
+            # trials1 = trial_indices[:split_point]
+            # trials2 = trial_indices[split_point:]
             
+            # Instead of random trial splitting, do even-odd splitting
+            trials1 = np.arange(0, n_trials, 2)
+            trials2 = np.arange(1, n_trials, 2)
             # Calculate means for actual data
             first_half_mean = np.mean(cell_activity[trials1], axis=0)
             second_half_mean = np.mean(cell_activity[trials2], axis=0)

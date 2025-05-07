@@ -42,7 +42,7 @@ def create_response_plot(normalized_spatial_activity, reliable_cells, clim=None)
     # Apply a non-linear transformation to enhance small differences
     # (using power function, which enhances high values more than low ones)
     # enhanced_even_avg = np.power(even_avg, 1.5)  # Adjust power as needed
-    enhanced_odd_avg = np.power(odd_avg, 0.5)  # Adjust power as needed
+    enhanced_odd_avg = np.power(odd_avg, 0.1)  # Adjust power as needed
     
     # Step 5: Find peak location for each cell in the enhanced even trials
     peak_locations = np.argmax(enhanced_odd_avg, axis=1)

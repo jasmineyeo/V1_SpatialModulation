@@ -160,3 +160,4 @@ cython_debug/
 #.idea/
 V1_SpatialModulation-1/
 *.png
+*.pkl
