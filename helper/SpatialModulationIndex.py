@@ -551,8 +551,20 @@ def calculate_SMI_BBBB(spatial_activity, bin_centers, reliable_cells, segment_di
         # Find the non-preferred position with the SMALLEST response (for maximal contrast)
         min_resp_idx = np.argmin(non_preferred_responses)
         Rn = non_preferred_responses[min_resp_idx]
-        non_preferred_position_even = valid_non_preferred_positions[min_resp_idx]
-        
+
+        # Check if the minimum response is zero, if so use the second smallest value
+        if Rn < 0.05:
+            # Create a copy of the array and replace the minimum value with infinity
+            temp_responses = non_preferred_responses.copy()
+            temp_responses[min_resp_idx] = np.inf
+            
+            # Find the second smallest value
+            second_min_idx = np.argmin(temp_responses)
+            Rn = non_preferred_responses[second_min_idx]
+            non_preferred_position_even = valid_non_preferred_positions[second_min_idx]
+        else:
+            non_preferred_position_even = valid_non_preferred_positions[min_resp_idx]
+            
         # Store the fitted curve for the chosen non-preferred position
         if non_preferred_fit_success[min_resp_idx]:
             non_preferred_fitted_curves[cell] = fitted_non_preferred_curves[min_resp_idx]
