@@ -98,20 +98,237 @@ def fit_response_profile(bin_centers, profile, initial_peak_idx, window_size=5):
         # Fall back to the original peak if fitting fails
         return None, None, bin_centers[initial_peak_idx], profile[initial_peak_idx], False
 
+# def calculate_SMI(spatial_activity, bin_centers, reliable_cells, segment_distance=55, exclude_boundary_cm=15):
+#     """
+#     Calculate the Spatial Modulation Index (SMI) using cross-validation approach with Gaussian fitting:
+#     - Odd trials to find preferred position
+#     - Even trials to measure responses
+#     - SMI = (Rp - Rn) / (Rp + Rn)
+    
+#     Where Rp = response at preferred position, Rn = response at non-preferred position.
+#     """
+#     n_cells, n_trials, n_bins = spatial_activity.shape
+    
+#     # # Separate odd and even trials
+#     # odd_indices = np.arange(0, n_trials, 2)
+#     # even_indices = np.arange(1, n_trials, 2)
+    
+#     # RANDOM HALVES
+#     odd_indices = np.random.choice(n_trials, n_trials // 2, replace=False)
+#     even_indices = np.setdiff1d(np.arange(n_trials), odd_indices)
+
+    
+#     # Calculate corridor boundaries
+#     min_pos = np.min(bin_centers)
+#     max_pos = np.max(bin_centers)
+#     corridor_length = np.max(bin_centers) - min_pos
+    
+#     # Calculate boundary positions in the original coordinate system
+#     min_allowed = min_pos + exclude_boundary_cm
+#     max_allowed = max_pos - exclude_boundary_cm
+#     print(f"  Corridor length: {corridor_length:.2f} and valid position range: {min_allowed:.2f} to {max_allowed:.2f}")
+        
+#     # Compute response profiles for odd and even trials
+#     odd_profiles = np.mean(spatial_activity[:, odd_indices, :], axis=1)
+#     even_profiles = np.mean(spatial_activity[:, even_indices, :], axis=1)
+    
+#     # Initialize arrays to store results
+#     SMI_values = np.zeros(n_cells)
+#     preferred_positions = np.zeros(n_cells)
+#     non_preferred_positions = np.zeros(n_cells)
+#     Rp_values = np.zeros(n_cells)
+#     Rn_values = np.zeros(n_cells)
+#     valid_cells = np.zeros(n_cells, dtype=bool)
+    
+#     # Store fitted curves for visualization
+#     preferred_fitted_curves = np.zeros((n_cells, n_bins))
+#     non_preferred_fitted_curves = np.zeros((n_cells, n_bins))
+#     fitting_success = np.zeros((n_cells, 2), dtype=bool)  # [0] for preferred, [1] for non-preferred
+
+#     # Count various rejection reasons
+#     outside_boundary_count = 0
+#     nonpref_outside_range_count = 0
+#     zero_response_count = 0
+#     fitting_failed_count = 0
+#     valid_count = 0
+    
+#     for cell in range(n_cells):
+#         # Find the initial preferred position from odd trials
+#         preferred_idx_odd = np.argmax(odd_profiles[cell])
+#         preferred_position_odd = bin_centers[preferred_idx_odd]
+
+#         # Check if the preferred position is within allowed boundaries
+#         if preferred_position_odd < min_allowed or preferred_position_odd > max_allowed:
+#             outside_boundary_count += 1
+#             valid_cells[cell] = False
+#             continue
+
+#         # Define a window around the peak in odd trials for more precise localization
+#         # Fit a double Gaussian to the odd trials profile to find a smoother peak
+#         popt_odd, fit_curve_odd, preferred_position_fitted_odd, _, fit_success_odd = fit_response_profile(
+#             bin_centers, odd_profiles[cell], preferred_idx_odd, window_size=5
+#         )
+        
+#         # Find the closest bin to the fitted preferred position
+#         preferred_idx_odd_fitted = np.argmin(np.abs(bin_centers - preferred_position_fitted_odd))
+        
+#         # Now find the corresponding peak in even trials within a window of the refined odd peak
+#         start_idx_pref = max(0, preferred_idx_odd_fitted - 1)
+#         end_idx_pref = min(n_bins, preferred_idx_odd_fitted + 1)
+#         window_profile_pref = even_profiles[cell, start_idx_pref:end_idx_pref]
+#         window_max_idx_pref = np.argmax(window_profile_pref)
+#         preferred_idx_even_initial = start_idx_pref + window_max_idx_pref
+        
+#         # Fit a double Gaussian to the even trials around this peak for the final preferred position
+#         popt_even_pref, fit_curve_even_pref, preferred_position_fitted_even, peak_response_even, fit_success_even = fit_response_profile(
+#             bin_centers, even_profiles[cell], preferred_idx_even_initial, window_size=5
+#         )
+        
+#         # Store the fitting success status
+#         fitting_success[cell, 0] = fit_success_even
+        
+#         # If fitting failed, we can either use the raw peak or skip this cell
+#         if not fit_success_even:
+#             fitting_failed_count += 1
+#             preferred_position_even = bin_centers[preferred_idx_even_initial]
+#             Rp = even_profiles[cell, preferred_idx_even_initial]
+#         else:
+#             # Use the fitted peak position and height
+#             preferred_position_even = preferred_position_fitted_even
+#             Rp = peak_response_even
+#             # Store the fitted curve for visualization
+#             preferred_fitted_curves[cell] = fit_curve_even_pref
+
+#         # Calculate the non-preferred position (both possibilities)
+#         corridor_midpoint = min_pos + corridor_length / 2
+#         if preferred_position_even < corridor_midpoint:
+#             # If in first segment, the non-preferred position is in second segment
+#             non_preferred_position_approx = preferred_position_even + segment_distance
+#         else:
+#             # If in second segment, the non-preferred position is in first segment
+#             non_preferred_position_approx = preferred_position_even - segment_distance
+
+#         # Check if non-preferred position is within corridor bounds
+#         if non_preferred_position_approx < min_pos or non_preferred_position_approx > max_pos:
+#             nonpref_outside_range_count += 1
+#             valid_cells[cell] = False
+#             continue
+
+#         # Find the closest bin to the approximate non-preferred position
+#         non_preferred_idx_approx = np.argmin(np.abs(bin_centers - non_preferred_position_approx))
+
+#         # Find the maximum response within ±3 indices of the non-preferred position
+#         start_idx_nonpref = max(0, non_preferred_idx_approx - 1)
+#         end_idx_nonpref = min(n_bins, non_preferred_idx_approx + 1)
+#         # start_idx_nonpref = max(0, non_preferred_idx_approx - 3)
+#         # end_idx_nonpref = min(n_bins, non_preferred_idx_approx + 3)
+#         window_profile_nonpref = even_profiles[cell, start_idx_nonpref:end_idx_nonpref]
+#         window_max_idx_nonpref = np.argmax(window_profile_nonpref)
+#         non_preferred_idx_even_initial = start_idx_nonpref + window_max_idx_nonpref
+        
+#         # Fit a double Gaussian to the non-preferred position response
+#         popt_even_nonpref, fit_curve_even_nonpref, non_preferred_position_fitted, non_preferred_resp_fitted, fit_success_nonpref = fit_response_profile(
+#             bin_centers, even_profiles[cell], non_preferred_idx_even_initial, window_size=5
+#         )
+        
+#         # Store the fitting success status
+#         fitting_success[cell, 1] = fit_success_nonpref
+        
+#         # If fitting failed, fall back to the raw peak
+#         if not fit_success_nonpref:
+#             non_preferred_position_even = bin_centers[non_preferred_idx_even_initial]
+#             Rn = window_profile_nonpref[window_max_idx_nonpref]
+#         else:
+#             # Use the fitted non-preferred position and response
+#             non_preferred_position_even = non_preferred_position_fitted
+#             Rn = non_preferred_resp_fitted
+#             # Store the fitted curve for visualization
+#             non_preferred_fitted_curves[cell] = fit_curve_even_nonpref
+
+#         # Calculate SMI
+#         if Rp + Rn > 0:  # Avoid division by zero
+#             SMI = (Rp - Rn) / (Rp + Rn)
+#             valid_count += 1
+
+#             # if Rp - Rn > 0:
+#             #     SMI = (Rp - Rn) / (Rp + Rn)
+#             #     valid_count += 1
+#             # else:
+#             #     SMI = 0
+#             #     zero_response_count += 1
+#             #     valid_cells[cell] = False
+#             #     continue
+#         else:
+#             SMI = 0
+#             zero_response_count += 1
+#             valid_cells[cell] = False
+#             continue
+        
+#         # Store results - use the adjusted positions from even trials
+#         SMI_values[cell] = SMI
+#         preferred_positions[cell] = preferred_position_even
+#         non_preferred_positions[cell] = non_preferred_position_even
+#         Rp_values[cell] = Rp
+#         Rn_values[cell] = Rn
+#         valid_cells[cell] = True
+    
+#     print(f"Number of total cells: {n_cells} and number of valid cells: {np.sum(valid_cells)}")      
+
+#     # find cells that are true for both reliable_cells and valid_cells
+#     if reliable_cells is not None:
+#         reliable_valid_cells = np.logical_and(valid_cells, reliable_cells)
+#     else:
+#         reliable_valid_cells = valid_cells
+    
+#     # Print summary statistics
+#     print(f"\nSMI calculation summary:")
+#     print(f"  Total cells: {n_cells}")
+#     print(f"  Reliable&Valid cells: {np.sum(reliable_valid_cells)} ({np.sum(reliable_valid_cells)/n_cells*100:.1f}%)")
+#     print(f"  Rejected - preferred position outside boundary: {outside_boundary_count} ({outside_boundary_count/n_cells*100:.1f}%)")
+#     print(f"  Rejected - non-preferred position outside corridor: {nonpref_outside_range_count} ({nonpref_outside_range_count/n_cells*100:.1f}%)")
+#     print(f"  Rejected - zero response sum: {zero_response_count} ({zero_response_count/n_cells*100:.1f}%)")
+#     print(f"  Fitting failed (but used raw peak instead): {fitting_failed_count} ({fitting_failed_count/n_cells*100:.1f}%)")
+        
+#     # Create result dictionary
+#     results = {
+#         'SMI': SMI_values,
+#         'preferred_positions': preferred_positions,
+#         'non_preferred_positions': non_preferred_positions,
+#         'Rp': Rp_values,
+#         'Rn': Rn_values,
+#         'odd_profiles': odd_profiles,
+#         'even_profiles': even_profiles,
+#         'preferred_fitted_curves': preferred_fitted_curves,
+#         'non_preferred_fitted_curves': non_preferred_fitted_curves,
+#         'fitting_success': fitting_success,
+#         'min_allowed': min_allowed,
+#         'max_allowed': max_allowed,
+#         'valid_cells': valid_cells,
+#         'reliable_valid_cells': reliable_valid_cells if reliable_cells is not None else None,
+#         'parameters': {
+#                 'segment_distance': segment_distance,
+#                 'exclude_boundary_cm': exclude_boundary_cm,
+#                 'n_cells': n_cells,
+#                 'n_trials': n_trials,
+#                 'n_bins': n_bins,
+#                 'corridor_length': corridor_length,
+#                 'min_pos': min_pos,
+#                 'max_pos': max_pos
+#             }
+#     }
+    
+#     return results
+
 def calculate_SMI(spatial_activity, bin_centers, reliable_cells, segment_distance=55, exclude_boundary_cm=15):
     """
     Calculate the Spatial Modulation Index (SMI) using cross-validation approach with Gaussian fitting:
-    - Odd trials to find preferred position
+    - Odd trials to find preferred position (constrained within boundaries)
     - Even trials to measure responses
     - SMI = (Rp - Rn) / (Rp + Rn)
     
     Where Rp = response at preferred position, Rn = response at non-preferred position.
     """
     n_cells, n_trials, n_bins = spatial_activity.shape
-    
-    # # Separate odd and even trials
-    # odd_indices = np.arange(0, n_trials, 2)
-    # even_indices = np.arange(1, n_trials, 2)
     
     # RANDOM HALVES
     odd_indices = np.random.choice(n_trials, n_trials // 2, replace=False)
@@ -127,6 +344,20 @@ def calculate_SMI(spatial_activity, bin_centers, reliable_cells, segment_distanc
     min_allowed = min_pos + exclude_boundary_cm
     max_allowed = max_pos - exclude_boundary_cm
     print(f"  Corridor length: {corridor_length:.2f} and valid position range: {min_allowed:.2f} to {max_allowed:.2f}")
+    
+    # Find bin indices corresponding to the allowed boundaries
+    min_allowed_idx = np.argmin(np.abs(bin_centers - min_allowed))
+    max_allowed_idx = np.argmin(np.abs(bin_centers - max_allowed))
+    
+    # Ensure we have a valid range
+    if min_allowed_idx >= max_allowed_idx:
+        print("Warning: Invalid boundary range - no valid bins available")
+        min_allowed_idx = 0
+        max_allowed_idx = n_bins - 1
+    
+    print(f"  Boundary bins: min_allowed_idx={min_allowed_idx} (pos={bin_centers[min_allowed_idx]:.2f}), max_allowed_idx={max_allowed_idx} (pos={bin_centers[max_allowed_idx]:.2f})")
+        
+    print(f"  Valid bin range: {min_allowed_idx} to {max_allowed_idx} (bins {bin_centers[min_allowed_idx]:.2f} to {bin_centers[max_allowed_idx]:.2f})")
         
     # Compute response profiles for odd and even trials
     odd_profiles = np.mean(spatial_activity[:, odd_indices, :], axis=1)
@@ -146,28 +377,51 @@ def calculate_SMI(spatial_activity, bin_centers, reliable_cells, segment_distanc
     fitting_success = np.zeros((n_cells, 2), dtype=bool)  # [0] for preferred, [1] for non-preferred
 
     # Count various rejection reasons
-    outside_boundary_count = 0
     nonpref_outside_range_count = 0
     zero_response_count = 0
     fitting_failed_count = 0
     valid_count = 0
+    boundary_constrained_count = 0  # New counter for cells where we constrained the peak
     
     for cell in range(n_cells):
-        # Find the initial preferred position from odd trials
-        preferred_idx_odd = np.argmax(odd_profiles[cell])
+        # Find the preferred position from odd trials, but constrain it to valid boundaries
+        # First, find the global maximum
+        global_preferred_idx = np.argmax(odd_profiles[cell])
+        
+        # Debug: print initial findings for problematic cells
+        if cell < 5:  # Debug first few cells
+            print(f"  Cell {cell}: Global max at bin {global_preferred_idx} (pos={bin_centers[global_preferred_idx]:.2f})")
+            print(f"    Boundary range: bins {min_allowed_idx}-{max_allowed_idx} (pos {bin_centers[min_allowed_idx]:.2f}-{bin_centers[max_allowed_idx]:.2f})")
+        
+        # Check if global maximum is within boundaries
+        if min_allowed_idx <= global_preferred_idx <= max_allowed_idx:
+            # Global maximum is within boundaries, use it
+            preferred_idx_odd = global_preferred_idx
+            if cell < 5:
+                print(f"    Using global max (within boundaries)")
+        else:
+            # Global maximum is outside boundaries, find the maximum within the valid range
+            valid_profile = odd_profiles[cell, min_allowed_idx:max_allowed_idx+1]
+            local_max_idx = np.argmax(valid_profile)
+            preferred_idx_odd = min_allowed_idx + local_max_idx
+            boundary_constrained_count += 1
+            if cell < 5:
+                print(f"    Constraining peak from bin {global_preferred_idx} to bin {preferred_idx_odd} (pos {bin_centers[preferred_idx_odd]:.2f})")
+        
         preferred_position_odd = bin_centers[preferred_idx_odd]
-
-        # Check if the preferred position is within allowed boundaries
-        if preferred_position_odd < min_allowed or preferred_position_odd > max_allowed:
-            outside_boundary_count += 1
-            valid_cells[cell] = False
-            continue
 
         # Define a window around the peak in odd trials for more precise localization
         # Fit a double Gaussian to the odd trials profile to find a smoother peak
         popt_odd, fit_curve_odd, preferred_position_fitted_odd, _, fit_success_odd = fit_response_profile(
             bin_centers, odd_profiles[cell], preferred_idx_odd, window_size=5
         )
+        
+        # CRITICAL: Ensure the fitted position is also within boundaries
+        if preferred_position_fitted_odd < min_allowed or preferred_position_fitted_odd > max_allowed:
+            # If fitting pushed us outside boundaries, use the raw constrained position
+            preferred_position_fitted_odd = preferred_position_odd
+            if cell < 5:
+                print(f"    Fitting pushed outside boundaries, using raw position: {preferred_position_fitted_odd:.2f}")
         
         # Find the closest bin to the fitted preferred position
         preferred_idx_odd_fitted = np.argmin(np.abs(bin_centers - preferred_position_fitted_odd))
@@ -217,11 +471,9 @@ def calculate_SMI(spatial_activity, bin_centers, reliable_cells, segment_distanc
         # Find the closest bin to the approximate non-preferred position
         non_preferred_idx_approx = np.argmin(np.abs(bin_centers - non_preferred_position_approx))
 
-        # Find the maximum response within ±3 indices of the non-preferred position
+        # Find the maximum response within ±1 indices of the non-preferred position
         start_idx_nonpref = max(0, non_preferred_idx_approx - 1)
         end_idx_nonpref = min(n_bins, non_preferred_idx_approx + 1)
-        # start_idx_nonpref = max(0, non_preferred_idx_approx - 3)
-        # end_idx_nonpref = min(n_bins, non_preferred_idx_approx + 3)
         window_profile_nonpref = even_profiles[cell, start_idx_nonpref:end_idx_nonpref]
         window_max_idx_nonpref = np.argmax(window_profile_nonpref)
         non_preferred_idx_even_initial = start_idx_nonpref + window_max_idx_nonpref
@@ -247,17 +499,18 @@ def calculate_SMI(spatial_activity, bin_centers, reliable_cells, segment_distanc
 
         # Calculate SMI
         if Rp + Rn > 0:  # Avoid division by zero
+            
             SMI = (Rp - Rn) / (Rp + Rn)
             valid_count += 1
-
             # if Rp - Rn > 0:
-            #     SMI = (Rp - Rn) / (Rp + Rn)
-            #     valid_count += 1
+            #         SMI = (Rp - Rn) / (Rp + Rn)
+            #         valid_count += 1
             # else:
             #     SMI = 0
             #     zero_response_count += 1
             #     valid_cells[cell] = False
             #     continue
+                
         else:
             SMI = 0
             zero_response_count += 1
@@ -284,7 +537,7 @@ def calculate_SMI(spatial_activity, bin_centers, reliable_cells, segment_distanc
     print(f"\nSMI calculation summary:")
     print(f"  Total cells: {n_cells}")
     print(f"  Reliable&Valid cells: {np.sum(reliable_valid_cells)} ({np.sum(reliable_valid_cells)/n_cells*100:.1f}%)")
-    print(f"  Rejected - preferred position outside boundary: {outside_boundary_count} ({outside_boundary_count/n_cells*100:.1f}%)")
+    print(f"  Cells with boundary-constrained peaks: {boundary_constrained_count} ({boundary_constrained_count/n_cells*100:.1f}%)")
     print(f"  Rejected - non-preferred position outside corridor: {nonpref_outside_range_count} ({nonpref_outside_range_count/n_cells*100:.1f}%)")
     print(f"  Rejected - zero response sum: {zero_response_count} ({zero_response_count/n_cells*100:.1f}%)")
     print(f"  Fitting failed (but used raw peak instead): {fitting_failed_count} ({fitting_failed_count/n_cells*100:.1f}%)")
@@ -305,6 +558,7 @@ def calculate_SMI(spatial_activity, bin_centers, reliable_cells, segment_distanc
         'max_allowed': max_allowed,
         'valid_cells': valid_cells,
         'reliable_valid_cells': reliable_valid_cells if reliable_cells is not None else None,
+        'boundary_constrained_count': boundary_constrained_count,  # New field
         'parameters': {
                 'segment_distance': segment_distance,
                 'exclude_boundary_cm': exclude_boundary_cm,
@@ -318,6 +572,7 @@ def calculate_SMI(spatial_activity, bin_centers, reliable_cells, segment_distanc
     }
     
     return results
+
 
 def calculate_SMI_BBBB(spatial_activity, bin_centers, reliable_cells, segment_distances=[20, 40], exclude_boundary_cm=0):
     """
@@ -376,11 +631,12 @@ def calculate_SMI_BBBB(spatial_activity, bin_centers, reliable_cells, segment_di
     valid_count = 0
     
     # Define the landmarks (assuming they're evenly spaced)
-    corridor_third = corridor_length / 3
+    corridor_fourth = corridor_length / 4
     landmark_positions = [
-        min_pos + corridor_third,         # First landmark
-        min_pos + 2 * corridor_third,     # Second landmark
-        max_pos                           # Third landmark
+        min_pos + corridor_fourth,         # First landmark
+        min_pos + 2 * corridor_fourth,     # Second landmark
+        min_pos + 3 * corridor_fourth,     # Third landmark
+        max_pos                           # Fourth landmark
     ]
     
     for cell in range(n_cells):
@@ -574,17 +830,17 @@ def calculate_SMI_BBBB(spatial_activity, bin_centers, reliable_cells, segment_di
         
         # Calculate SMI - only allow positive SMI values (Rp must be > Rn)
         if Rp + Rn > 0:  # Avoid division by zero
-                # SMI = (Rp - Rn) / (Rp + Rn)
-                # valid_count += 1
+                SMI = (Rp - Rn) / (Rp + Rn)
+                valid_count += 1
 
-                if Rp - Rn > 0:
-                    SMI = (Rp - Rn) / (Rp + Rn)
-                    valid_count += 1
-                else:
-                    SMI = 0
-                    zero_response_count += 1
-                    valid_cells[cell] = False
-                    continue
+                # if Rp - Rn > 0:
+                #     SMI = (Rp - Rn) / (Rp + Rn)
+                #     valid_count += 1
+                # else:
+                #     SMI = 0
+                #     zero_response_count += 1
+                #     valid_cells[cell] = False
+                #     continue
                 
         else:
             # Skip cells where preferred response is not greater than non-preferred
@@ -620,12 +876,12 @@ def calculate_SMI_BBBB(spatial_activity, bin_centers, reliable_cells, segment_di
     
     # Calculate segment statistics
     if np.sum(valid_cells) > 0:
-        segment_counts = np.zeros(3, dtype=int)
-        for i in range(3):
+        segment_counts = np.zeros(4, dtype=int)
+        for i in range(4):
             segment_counts[i] = np.sum(landmark_segment[valid_cells] == i)
         
         print(f"\nPreferred position by landmark segment:")
-        for i in range(3):
+        for i in range(4):
             print(f"  Landmark {i+1}: {segment_counts[i]} cells ({segment_counts[i]/np.sum(valid_cells)*100:.1f}%)")
         
     # Create result dictionary
@@ -762,7 +1018,7 @@ def plot_SMI_results(results, bin_centers, reliable_cells=None, avg_cc=None, coh
         plt.axvspan(0, min_allowed, color='red', alpha=0.1)
         plt.axvspan(max_allowed, bin_centers[-1], color='red', alpha=0.1)
         
-        plt.title(f'Cell {cell_idx} - SMI: {smi:.3f}, Avg CC: {avg_cc_value:.3f}, Cohen\'s d: {cohens_d_value:.3f}')
+        # plt.title(f'Cell {cell_idx} - SMI: {smi:.3f}, Avg CC: {avg_cc_value:.3f}, Cohen\'s d: {cohens_d_value:.3f}')
         plt.xlabel('Position (cm)')
         plt.ylabel('Activity')
         plt.legend(loc='upper right', fontsize='small')
@@ -1134,7 +1390,7 @@ def plot_SMI_results_BBBB(results, bin_centers, reliable_cells=None, avg_cc=None
         # Add segment info to title
         segment_info = ""
         if landmark_segment is not None:
-            segment_names = ["First", "Second", "Third"]
+            segment_names = ["First", "Second", "Third", "Fourth"]
             segment_info = f" - Near {segment_names[landmark_segment[cell_idx]]} Landmark"
         
         title_text = f'Cell {cell_idx} - SMI: {smi:.3f}'
@@ -1179,7 +1435,7 @@ def plot_SMI_results_BBBB(results, bin_centers, reliable_cells=None, avg_cc=None
         
         # Add segment info to bar chart
         if landmark_segment is not None:
-            segment_names = ["First", "Second", "Third"]
+            segment_names = ["First", "Second", "Third", "Fourth"]
             segment_name = segment_names[landmark_segment[cell_idx]]
             # plt.title(f'Response Comparison (Even Trials)\nNear {segment_name} Landmark')
         else:
@@ -1241,6 +1497,396 @@ def analyze_spatial_modulation(spatial_activity, bin_centers, reliable_cells=Non
         'smi_figures': smi_figures
     }
     
+def calculate_SMI_BBBB_modified(spatial_activity, bin_centers, reliable_cells, segment_distances=[30, 60, 90], exclude_boundary_cm=0, search_tolerance=3):
+    """
+    Calculate the Spatial Modulation Index (SMI) using cross-validation approach with Gaussian fitting:
+    - Odd trials to find preferred position
+    - Even trials to measure responses at preferred and non-preferred positions
+    - SMI = (Rp - Rn) / (Rp + Rn)
+    
+    With four landmarks, searches for peaks around expected distances with tolerance.
+    Where Rp = response at preferred position, Rn = response at non-preferred position (smallest non-zero).
+    
+    Parameters:
+    -----------
+    search_tolerance : int, default=3
+        Search window (±bins) around expected landmark distances to find actual peaks
+    """
+    n_cells, n_trials, n_bins = spatial_activity.shape
+    
+    # RANDOM HALVES instead of odd/even
+    odd_indices = np.random.choice(n_trials, n_trials // 2, replace=False)
+    even_indices = np.setdiff1d(np.arange(n_trials), odd_indices)
+    
+    # Calculate corridor boundaries
+    min_pos = np.min(bin_centers)
+    max_pos = np.max(bin_centers)
+    corridor_length = max_pos - min_pos
+    
+    # Calculate boundary positions in the original coordinate system
+    min_allowed = min_pos + exclude_boundary_cm
+    max_allowed = max_pos - exclude_boundary_cm
+    print(f"  Corridor length: {corridor_length:.2f} and valid position range: {min_allowed:.2f} to {max_allowed:.2f}")
+        
+    # Compute response profiles for odd and even trials
+    odd_profiles = np.mean(spatial_activity[:, odd_indices, :], axis=1)
+    even_profiles = np.mean(spatial_activity[:, even_indices, :], axis=1)
+    
+    # Initialize arrays to store results
+    SMI_values = np.zeros(n_cells)
+    preferred_positions = np.zeros(n_cells)
+    non_preferred_positions = np.zeros(n_cells)
+    Rp_values = np.zeros(n_cells)
+    Rn_values = np.zeros(n_cells)
+    valid_cells = np.zeros(n_cells, dtype=bool)
+    
+    # Store fitted curves for visualization
+    preferred_fitted_curves = np.zeros((n_cells, n_bins))
+    non_preferred_fitted_curves = np.zeros((n_cells, n_bins))
+    fitting_success = np.zeros((n_cells, 2), dtype=bool)  # [0] for preferred, [1] for non-preferred
+    
+    # Track which landmark segment the preferred position falls near
+    landmark_segment = np.zeros(n_cells, dtype=int)  # 0=first, 1=second, 2=third, 3=fourth
+    
+    # Store all potential non-preferred positions and responses for visualization
+    all_potential_nonpref = np.zeros((n_cells, len(segment_distances) * 2, 3))  # [cell, option, [position, response, valid]]
+
+    # Count various rejection reasons
+    zero_response_count = 0
+    fitting_failed_count = 0
+    valid_count = 0
+    boundary_peak_count = 0
+    no_nonpref_count = 0
+    
+    # Define the four landmarks spaced 30 bins apart
+    # Assuming landmarks are evenly distributed across the corridor
+    corridor_fifth = corridor_length / 5
+    landmark_positions = [
+        min_pos + corridor_fifth,         # First landmark
+        min_pos + 2 * corridor_fifth,     # Second landmark  
+        min_pos + 3 * corridor_fifth,     # Third landmark
+        min_pos + 4 * corridor_fifth      # Fourth landmark
+    ]
+    
+    for cell in range(n_cells):
+        # Find the initial preferred position from odd trials
+        preferred_idx_odd = np.argmax(odd_profiles[cell])
+        preferred_position_odd = bin_centers[preferred_idx_odd]
+
+        # Check if the preferred position is within exclude boundary region
+        if preferred_position_odd < min_allowed or preferred_position_odd > max_allowed:
+            # Instead of rejecting, find a peak inside the exclude region
+            boundary_peak_count += 1
+            
+            # Look for peaks within the boundary region
+            if preferred_position_odd < min_allowed:
+                # Peak is in lower boundary, search in lower boundary region
+                boundary_mask = bin_centers < min_allowed
+            else:
+                # Peak is in upper boundary, search in upper boundary region  
+                boundary_mask = bin_centers > max_allowed
+                
+            boundary_profile = odd_profiles[cell].copy()
+            boundary_profile[~boundary_mask] = 0  # Zero out non-boundary regions
+            
+            if np.max(boundary_profile) > 0:
+                preferred_idx_odd = np.argmax(boundary_profile)
+                preferred_position_odd = bin_centers[preferred_idx_odd]
+            # If no peak in boundary, continue with original peak
+
+        # Define a window around the peak in odd trials for more precise localization
+        # Fit a double Gaussian to the odd trials profile to find a smoother peak
+        popt_odd, fit_curve_odd, preferred_position_fitted_odd, _, fit_success_odd = fit_response_profile(
+            bin_centers, odd_profiles[cell], preferred_idx_odd, window_size=5
+        )
+        
+        # Find the closest bin to the fitted preferred position
+        preferred_idx_odd_fitted = np.argmin(np.abs(bin_centers - preferred_position_fitted_odd))
+        
+        # Now find the corresponding peak in even trials within a window of the refined odd peak
+        start_idx_pref = max(0, preferred_idx_odd_fitted - 1)
+        end_idx_pref = min(n_bins, preferred_idx_odd_fitted + 1)
+        window_profile_pref = even_profiles[cell, start_idx_pref:end_idx_pref]
+        window_max_idx_pref = np.argmax(window_profile_pref)
+        preferred_idx_even_initial = start_idx_pref + window_max_idx_pref
+        
+        # Fit a double Gaussian to the even trials around this peak for the final preferred position
+        popt_even_pref, fit_curve_even_pref, preferred_position_fitted_even, peak_response_even, fit_success_even = fit_response_profile(
+            bin_centers, even_profiles[cell], preferred_idx_even_initial, window_size=5
+        )
+        
+        # Store the fitting success status
+        fitting_success[cell, 0] = fit_success_even
+        
+        # If fitting failed, we can either use the raw peak or skip this cell
+        if not fit_success_even:
+            fitting_failed_count += 1
+            preferred_position_even = bin_centers[preferred_idx_even_initial]
+            Rp = even_profiles[cell, preferred_idx_even_initial]
+        else:
+            # Use the fitted peak position and height
+            preferred_position_even = preferred_position_fitted_even
+            Rp = peak_response_even
+            # Store the fitted curve for visualization
+            preferred_fitted_curves[cell] = fit_curve_even_pref
+
+        # Determine which landmark segment the preferred position is closest to
+        distances_to_landmarks = [abs(preferred_position_even - pos) for pos in landmark_positions]
+        closest_landmark = np.argmin(distances_to_landmarks)
+        landmark_segment[cell] = closest_landmark
+        
+        # Calculate potential non-preferred positions with flexible peak detection
+        # Search around expected landmark distances with tolerance
+        non_preferred_positions_list = []
+        
+        # For each expected distance, search for actual peaks in the vicinity
+        for dist in segment_distances:
+            # Search forward direction
+            center_pos_forward = preferred_position_even + dist
+            if min_pos <= center_pos_forward <= max_pos:
+                # Define search window around expected position
+                search_start = max(min_pos, center_pos_forward - search_tolerance)
+                search_end = min(max_pos, center_pos_forward + search_tolerance)
+                
+                # Apply boundary exclusion: ensure search window doesn't include boundary regions
+                search_start = max(search_start, min_allowed)
+                search_end = min(search_end, max_allowed)
+                
+                # Skip if search window is entirely in boundary region
+                if search_start >= search_end:
+                    continue
+                
+                # Find bins within search window
+                search_mask = (bin_centers >= search_start) & (bin_centers <= search_end)
+                if np.any(search_mask):
+                    # Find the peak within this search window
+                    search_profile = even_profiles[cell].copy()
+                    search_profile[~search_mask] = 0  # Zero out regions outside search window
+                    
+                    if np.max(search_profile) > 0:
+                        peak_idx = np.argmax(search_profile)
+                        peak_pos = bin_centers[peak_idx]
+                        # Double-check that the found peak is not in boundary region
+                        if min_allowed <= peak_pos <= max_allowed:
+                            non_preferred_positions_list.append(peak_pos)
+            
+            # Search backward direction
+            center_pos_backward = preferred_position_even - dist
+            if min_pos <= center_pos_backward <= max_pos:
+                # Define search window around expected position
+                search_start = max(min_pos, center_pos_backward - search_tolerance)
+                search_end = min(max_pos, center_pos_backward + search_tolerance)
+                
+                # Apply boundary exclusion: ensure search window doesn't include boundary regions
+                search_start = max(search_start, min_allowed)
+                search_end = min(search_end, max_allowed)
+                
+                # Skip if search window is entirely in boundary region
+                if search_start >= search_end:
+                    continue
+                
+                # Find bins within search window
+                search_mask = (bin_centers >= search_start) & (bin_centers <= search_end)
+                if np.any(search_mask):
+                    # Find the peak within this search window
+                    search_profile = even_profiles[cell].copy()
+                    search_profile[~search_mask] = 0  # Zero out regions outside search window
+                    
+                    if np.max(search_profile) > 0:
+                        peak_idx = np.argmax(search_profile)
+                        peak_pos = bin_centers[peak_idx]
+                        # Double-check that the found peak is not in boundary region
+                        if min_allowed <= peak_pos <= max_allowed:
+                            non_preferred_positions_list.append(peak_pos)
+        
+        # Remove duplicate positions (in case search windows overlap)
+        non_preferred_positions_list = list(set(non_preferred_positions_list))
+        
+        # If no valid non-preferred positions found, skip this cell
+        if len(non_preferred_positions_list) == 0:
+            no_nonpref_count += 1
+            valid_cells[cell] = False
+            continue
+        
+        # Process each potential non-preferred position
+        non_preferred_responses = []
+        valid_non_preferred_positions = []
+        fitted_non_preferred_curves = []
+        non_preferred_fit_success = []
+        
+        # Initialize array to store all potential non-preferred positions for this cell
+        cell_potential_nonpref = np.zeros((len(non_preferred_positions_list), 3))
+        
+        for i, non_pref_pos in enumerate(non_preferred_positions_list):
+            # Set default values
+            cell_potential_nonpref[i, 0] = non_pref_pos  # Position
+            cell_potential_nonpref[i, 1] = -1  # Response (invalid)
+            cell_potential_nonpref[i, 2] = 0   # Valid flag (0=invalid)
+                
+            # Find the closest bin to this non-preferred position
+            non_preferred_idx_approx = np.argmin(np.abs(bin_centers - non_pref_pos))
+            
+            # Get exact response at this position
+            exact_response = even_profiles[cell, non_preferred_idx_approx]
+            
+            # Fit a double Gaussian to the non-preferred position response
+            # Use a window to allow finding the precise location
+            start_idx_nonpref = max(0, non_preferred_idx_approx - 5)
+            end_idx_nonpref = min(n_bins, non_preferred_idx_approx + 5)
+            
+            if start_idx_nonpref >= end_idx_nonpref:
+                continue  # Skip if window is invalid
+                
+            window_profile_nonpref = even_profiles[cell, start_idx_nonpref:end_idx_nonpref]
+            window_peak_idx = np.argmax(window_profile_nonpref) + start_idx_nonpref
+            
+            popt_even_nonpref, fit_curve, non_preferred_position_fitted, non_preferred_resp_fitted, fit_success_nonpref = fit_response_profile(
+                bin_centers, even_profiles[cell], window_peak_idx, window_size=5
+            )
+            
+            # If fitting succeeded, use the fitted values
+            if fit_success_nonpref:
+                # Calculate the distance from the estimated position to the fitted position
+                distance_from_target = abs(non_pref_pos - non_preferred_position_fitted)
+                
+                # Only use the fitted position if it's close to our target position
+                if distance_from_target <= 5:  # Within 5 units of target
+                    non_preferred_pos_final = non_preferred_position_fitted
+                    non_preferred_resp = non_preferred_resp_fitted
+                    fitted_curve_final = fit_curve
+                    fit_success = True
+                else:
+                    # If fitted position is too far, use the exact response at the target
+                    non_preferred_pos_final = non_pref_pos
+                    non_preferred_resp = exact_response
+                    fitted_curve_final = np.zeros_like(bin_centers)
+                    fit_success = False
+            else:
+                # If fitting failed, use the exact response at the target
+                non_preferred_pos_final = non_pref_pos
+                non_preferred_resp = exact_response
+                fitted_curve_final = np.zeros_like(bin_centers)
+                fit_success = False
+            
+            # Store this position, its response, and its fitted curve
+            valid_non_preferred_positions.append(non_preferred_pos_final)
+            non_preferred_responses.append(non_preferred_resp)
+            fitted_non_preferred_curves.append(fitted_curve_final)
+            non_preferred_fit_success.append(fit_success)
+            
+            # Store for visualization
+            cell_potential_nonpref[i, 0] = non_preferred_pos_final
+            cell_potential_nonpref[i, 1] = non_preferred_resp
+            cell_potential_nonpref[i, 2] = 1  # Valid flag
+        
+        # Store all potential non-preferred positions for this cell
+        if cell < all_potential_nonpref.shape[0]:
+            all_potential_nonpref[cell, :len(cell_potential_nonpref)] = cell_potential_nonpref
+        
+        # If no valid non-preferred positions, skip this cell
+        if len(non_preferred_responses) == 0:
+            valid_cells[cell] = False
+            continue
+        
+        # Find the non-preferred position with the SMALLEST NON-ZERO response
+        non_zero_responses = [(i, resp) for i, resp in enumerate(non_preferred_responses) if resp > 0.05]
+        
+        if len(non_zero_responses) == 0:
+            # If all responses are effectively zero, use the smallest positive response
+            min_resp_idx = np.argmin([abs(r) for r in non_preferred_responses])
+            Rn = non_preferred_responses[min_resp_idx]
+            non_preferred_position_even = valid_non_preferred_positions[min_resp_idx]
+        else:
+            # Find the smallest non-zero response
+            min_nonzero_idx, Rn = min(non_zero_responses, key=lambda x: x[1])
+            non_preferred_position_even = valid_non_preferred_positions[min_nonzero_idx]
+            
+        # Store the fitted curve for the chosen non-preferred position
+        chosen_idx = min_resp_idx if len(non_zero_responses) == 0 else min_nonzero_idx
+        if chosen_idx < len(non_preferred_fit_success) and non_preferred_fit_success[chosen_idx]:
+            non_preferred_fitted_curves[cell] = fitted_non_preferred_curves[chosen_idx]
+            fitting_success[cell, 1] = True
+        else:
+            fitting_success[cell, 1] = False
+        
+        # Calculate SMI
+        if Rp + Rn > 0:  # Avoid division by zero
+            SMI = (Rp - Rn) / (Rp + Rn)
+            valid_count += 1
+        else:
+            # Skip cells where sum is zero
+            SMI = 0
+            zero_response_count += 1
+            valid_cells[cell] = False
+            continue
+        
+        # Store results - use the adjusted positions from even trials
+        SMI_values[cell] = SMI
+        preferred_positions[cell] = preferred_position_even
+        non_preferred_positions[cell] = non_preferred_position_even
+        Rp_values[cell] = Rp
+        Rn_values[cell] = Rn
+        valid_cells[cell] = True
+    
+    print(f"Number of total cells: {n_cells} and number of valid cells: {np.sum(valid_cells)}")      
+
+    # find cells that are true for both reliable_cells and valid_cells
+    if reliable_cells is not None:
+        reliable_valid_cells = np.logical_and(valid_cells, reliable_cells)
+    else:
+        reliable_valid_cells = valid_cells
+    
+    # Print summary statistics
+    print(f"\nSMI calculation summary:")
+    print(f"  Total cells: {n_cells}")
+    print(f"  Reliable&Valid cells: {np.sum(reliable_valid_cells)} ({np.sum(reliable_valid_cells)/n_cells*100:.1f}%)")
+    print(f"  Peaks found in boundary region: {boundary_peak_count} ({boundary_peak_count/n_cells*100:.1f}%)")
+    print(f"  Rejected - no valid non-preferred positions: {no_nonpref_count} ({no_nonpref_count/n_cells*100:.1f}%)")
+    print(f"  Rejected - zero response sum: {zero_response_count} ({zero_response_count/n_cells*100:.1f}%)")
+    print(f"  Fitting failed (but used raw peak instead): {fitting_failed_count} ({fitting_failed_count/n_cells*100:.1f}%)")
+    
+    # Calculate segment statistics for four landmarks
+    if np.sum(valid_cells) > 0:
+        segment_counts = np.zeros(4, dtype=int)
+        for i in range(4):
+            segment_counts[i] = np.sum(landmark_segment[valid_cells] == i)
+        
+        print(f"\nPreferred position by landmark segment (4 landmarks):")
+        for i in range(4):
+            print(f"  Landmark {i+1}: {segment_counts[i]} cells ({segment_counts[i]/np.sum(valid_cells)*100:.1f}%)")
+        
+    # Create result dictionary
+    results = {
+        'SMI': SMI_values,
+        'preferred_positions': preferred_positions,
+        'non_preferred_positions': non_preferred_positions,
+        'Rp': Rp_values,
+        'Rn': Rn_values,
+        'odd_profiles': odd_profiles,
+        'even_profiles': even_profiles,
+        'preferred_fitted_curves': preferred_fitted_curves,
+        'non_preferred_fitted_curves': non_preferred_fitted_curves,
+        'fitting_success': fitting_success,
+        'landmark_segment': landmark_segment,
+        'min_allowed': min_allowed,
+        'max_allowed': max_allowed,
+        'valid_cells': valid_cells,
+        'reliable_valid_cells': reliable_valid_cells if reliable_cells is not None else None,
+        'all_potential_nonpref': all_potential_nonpref,
+        'parameters': {
+            'segment_distances': segment_distances,
+            'exclude_boundary_cm': exclude_boundary_cm,
+            'n_cells': n_cells,
+            'n_trials': n_trials,
+            'n_bins': n_bins,
+            'corridor_length': corridor_length,
+            'min_pos': min_pos,
+            'max_pos': max_pos,
+            'landmark_positions': landmark_positions
+        }
+    }
+    
+    return results
     
 def analyze_spatial_modulation_BBBB(spatial_activity, bin_centers, reliable_cells=None, avg_cc=None, cohens_d=None, segment_distance=55, exclude_boundary_cm=3):
     """
@@ -1262,12 +1908,21 @@ def analyze_spatial_modulation_BBBB(spatial_activity, bin_centers, reliable_cell
     # 1. Calculate SMI with Gaussian fitting
     print("Calculating Spatial Modulation Index (SMI) with Gaussian fitting...")
     
-    smi_results = calculate_SMI_BBBB(
+    # smi_results = calculate_SMI_BBBB(
+    #     spatial_activity, 
+    #     bin_centers, 
+    #     reliable_cells=reliable_cells,
+    #     segment_distances=[segment_distance, segment_distance * 2],
+    #     exclude_boundary_cm=exclude_boundary_cm
+    # )
+    
+    smi_results = calculate_SMI_BBBB_modified(
         spatial_activity, 
         bin_centers, 
         reliable_cells=reliable_cells,
-        segment_distances=[segment_distance, segment_distance * 2],
-        exclude_boundary_cm=exclude_boundary_cm
+        segment_distances=[segment_distance, segment_distance * 2, segment_distance * 3],
+        exclude_boundary_cm=exclude_boundary_cm,
+        search_tolerance=3
     )
     
     # 2. Plot SMI results with fitted curves

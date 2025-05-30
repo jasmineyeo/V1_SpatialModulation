@@ -170,7 +170,7 @@ class SpatialModulationIndexLayerSpecific:
             
             # Statistical test against 1 using Wilcoxon signed-rank test
             try:
-                w_stat, p_value = stats.wilcoxon(valid_smi - 1) if len(valid_smi) > 1 else (np.nan, np.nan)
+                w_stat, p_value = stats.wilcoxon(valid_smi) if len(valid_smi) > 1 else (np.nan, np.nan)
                 t_stat = w_stat  # Store the W statistic for consistency
             except:
                 t_stat, p_value = np.nan, np.nan
@@ -240,8 +240,8 @@ class SpatialModulationIndexLayerSpecific:
         
         sns.boxplot(data=layer_data, ax=ax)
         ax.set_xticklabels(layer_names)
-        # ax.axhline(y=0, color='r', linestyle='--')
-        ax.axhline(y=1, color='r', linestyle='--')
+        ax.axhline(y=0, color='r', linestyle='--')
+        # ax.axhline(y=1, color='r', linestyle='--')
         ax.set_ylabel('Spatial Modulation Index (SMI)')
         ax.set_title('Distribution of SMI by Cortical Layer')
         
