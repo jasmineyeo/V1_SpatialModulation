@@ -796,7 +796,7 @@ class SpatialModulationIndexLayerSpecific:
             top_smi_values.append(layer_results[layer_name]['SMI'][idx])
             
         # Create plot
-        plt.figure(figsize=(15, 3*n_cells))
+        plt.figure(figsize=(15, 7*n_cells))
         
         for i, (cell_idx, smi) in enumerate(zip(top_cells, top_smi_values)):
             # Average across trials

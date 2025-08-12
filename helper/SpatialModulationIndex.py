@@ -1302,6 +1302,7 @@ def plot_SMI_results_BBBB(results, bin_centers, reliable_cells=None, avg_cc=None
     print(f"    Median SMI: {np.median(valid_SMI):.3f}")
     print(f"    SMI range: {np.min(valid_SMI):.3f} to {np.max(valid_SMI):.3f}")
     smi_median = np.median(valid_SMI)
+    
     # Create histogram of SMI values
     fig_hist = plt.figure(figsize=(10, 6))
     plt.hist(valid_SMI, bins=20, color='skyblue', edgecolor='black')
@@ -1344,10 +1345,10 @@ def plot_SMI_results_BBBB(results, bin_centers, reliable_cells=None, avg_cc=None
         has_nonpref_fit = fitting_success[cell_idx, 1]
         
         # Create figure
-        fig = plt.figure(figsize=(15, 5))
+        fig = plt.figure(figsize=(10, 5))
         
         # Plot odd and even trial profiles with fitted curves
-        plt.subplot(1, 3, 1)
+        plt.subplot(1, 2, 1)
         plt.plot(bin_centers, odd_profiles[cell_idx], 'b-', alpha=0.6, label='Odd Trials (Training)')
         plt.plot(bin_centers, even_profiles[cell_idx], 'r-', alpha=0.6, label='Even Trials (Testing)')
         
@@ -1370,11 +1371,11 @@ def plot_SMI_results_BBBB(results, bin_centers, reliable_cells=None, avg_cc=None
         plt.axvspan(0, min_allowed, color='red', alpha=0.1)
         plt.axvspan(max_allowed, bin_centers[-1], color='red', alpha=0.1)
         
-        # If we have landmark information, mark the three landmarks
-        if landmark_positions is not None:
-            for j, lpos in enumerate(landmark_positions):
-                plt.axvline(lpos, color='gray', linestyle='--', alpha=0.5,
-                          label=f'Landmark {j+1}' if j == 0 else f'_Landmark {j+1}')
+        # # If we have landmark information, mark the three landmarks
+        # if landmark_positions is not None:
+        #     for j, lpos in enumerate(landmark_positions):
+        #         plt.axvline(lpos, color='gray', linestyle='--', alpha=0.5,
+        #                   label=f'Landmark {j+1}' if j == 0 else f'_Landmark {j+1}')
         
         # Show all potential non-preferred positions
         if all_potential_nonpref is not None:
@@ -1387,51 +1388,45 @@ def plot_SMI_results_BBBB(results, bin_centers, reliable_cells=None, avg_cc=None
                     plt.axvline(pos, color='purple', linestyle=':', alpha=0.5,
                                 label=f'Alt. Non-Pref ({pos:.1f}cm)')
         
-        # Add segment info to title
-        segment_info = ""
-        if landmark_segment is not None:
-            segment_names = ["First", "Second", "Third", "Fourth"]
-            segment_info = f" - Near {segment_names[landmark_segment[cell_idx]]} Landmark"
+        # # Add segment info to title
+        # segment_info = ""
+        # if landmark_segment is not None:
+        #     segment_names = ["First", "Second", "Third", "Fourth"]
+        #     segment_info = f" - Near {segment_names[landmark_segment[cell_idx]]} Landmark"
         
-        title_text = f'Cell {cell_idx} - SMI: {smi:.3f}'
-        if avg_cc_value is not None:
-            title_text += f', Avg CC: {avg_cc_value:.3f}'
-        if cohens_d_value is not None:
-            title_text += f', Cohen\'s d: {cohens_d_value:.3f}'
-        title_text += segment_info
-        
-        plt.title(title_text)
+ 
         plt.xlabel('Position (cm)')
         plt.ylabel('Activity')
         plt.legend(loc='upper right', fontsize='small')
         
-        # Plot zoomed view of preferred position
-        plt.subplot(1, 3, 2)
-        # Determine zoom window
-        pref_idx = np.argmin(np.abs(bin_centers - pref_pos))
-        zoom_start = max(0, pref_idx - 10)
-        zoom_end = min(len(bin_centers), pref_idx + 10)
+        # # Plot zoomed view of preferred position
+        # plt.subplot(1, 3, 2)
+        # # Determine zoom window
+        # pref_idx = np.argmin(np.abs(bin_centers - pref_pos))
+        # zoom_start = max(0, pref_idx - 10)
+        # zoom_end = min(len(bin_centers), pref_idx + 10)
         
-        plt.plot(bin_centers[zoom_start:zoom_end], odd_profiles[cell_idx, zoom_start:zoom_end], 'b-', alpha=0.6, label='Odd')
-        plt.plot(bin_centers[zoom_start:zoom_end], even_profiles[cell_idx, zoom_start:zoom_end], 'r-', alpha=0.6, label='Even')
+        # plt.plot(bin_centers[zoom_start:zoom_end], odd_profiles[cell_idx, zoom_start:zoom_end], 'b-', alpha=0.6, label='Odd')
+        # plt.plot(bin_centers[zoom_start:zoom_end], even_profiles[cell_idx, zoom_start:zoom_end], 'r-', alpha=0.6, label='Even')
         
-        # Add fitted curve if available
-        if has_pref_fit:
-            plt.plot(bin_centers[zoom_start:zoom_end], preferred_fitted_curves[cell_idx, zoom_start:zoom_end], 
-                     'g--', linewidth=2, label='Preferred Fit')
+        # # Add fitted curve if available
+        # if has_pref_fit:
+        #     plt.plot(bin_centers[zoom_start:zoom_end], preferred_fitted_curves[cell_idx, zoom_start:zoom_end], 
+        #              'g--', linewidth=2, label='Preferred Fit')
         
-        plt.axvline(pref_pos, color='green', linestyle='-', alpha=0.7)
-        plt.title('Zoomed Preferred Position')
-        plt.xlabel('Position (cm)')
-        plt.ylabel('Activity')
-        plt.legend(loc='upper right', fontsize='small')
+        # plt.axvline(pref_pos, color='green', linestyle='-', alpha=0.7)
+        # plt.title('Zoomed Preferred Position')
+        # plt.xlabel('Position (cm)')
+        # plt.ylabel('Activity')
+        # plt.legend(loc='upper right', fontsize='small')
         
         # Plot response comparison at preferred and non-preferred positions
-        plt.subplot(1, 3, 3)
+        plt.subplot(1, 2, 2)
         positions = ['Preferred', 'Non-Preferred']
         values = [results['Rp'][cell_idx], results['Rn'][cell_idx]]
         
         bars = plt.bar(positions, values, color=['green', 'purple'], alpha=0.6)
+        plt.ylim(0, 1)
         
         # Add segment info to bar chart
         if landmark_segment is not None:
@@ -1444,11 +1439,20 @@ def plot_SMI_results_BBBB(results, bin_centers, reliable_cells=None, avg_cc=None
         plt.ylabel('Response')
         
         # Add text with SMI value
-        plt.text(0.5, max(values) * 1.1, f'SMI = {smi:.3f}', 
-                horizontalalignment='center', fontsize=12)
+        plt.title(f'SMI = {smi:.3f}', fontsize=12)
+        
+        title_text = f'Cell {cell_idx} - SMI: {smi:.3f}'
+        if avg_cc_value is not None:
+            title_text += f', Avg CC: {avg_cc_value:.3f}'
+        if cohens_d_value is not None:
+            title_text += f', Cohen\'s d: {cohens_d_value:.3f}'
+        # title_text += segment_info
+        
+        plt.suptitle(title_text, fontsize=20)
         
         plt.tight_layout()
         fig_examples.append(fig)
+
     
     # Return all figures
     return [fig_hist] + fig_examples
@@ -1514,10 +1518,10 @@ def calculate_SMI_BBBB_modified(spatial_activity, bin_centers, reliable_cells, s
     """
     n_cells, n_trials, n_bins = spatial_activity.shape
     
-    # RANDOM HALVES instead of odd/even
-    odd_indices = np.random.choice(n_trials, n_trials // 2, replace=False)
-    even_indices = np.setdiff1d(np.arange(n_trials), odd_indices)
-    
+    # Separate odd and even trials
+    odd_indices = np.arange(0, n_trials, 2)
+    even_indices = np.arange(1, n_trials, 2)
+
     # Calculate corridor boundaries
     min_pos = np.min(bin_centers)
     max_pos = np.max(bin_centers)
@@ -1558,7 +1562,7 @@ def calculate_SMI_BBBB_modified(spatial_activity, bin_centers, reliable_cells, s
     boundary_peak_count = 0
     no_nonpref_count = 0
     
-    # Define the four landmarks spaced 30 bins apart
+    # Define the four landmarks spaced segment_distances bins apart
     # Assuming landmarks are evenly distributed across the corridor
     corridor_fifth = corridor_length / 5
     landmark_positions = [
