@@ -2,6 +2,7 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+from tqdm import tqdm
 
 def test_cell_reliability(spatial_activity, n_shuffles=1000, 
                          cc_percentile=95, cohen_threshold=0.5,
@@ -38,8 +39,8 @@ def test_cell_reliability(spatial_activity, n_shuffles=1000,
     cell_activity_levels = np.mean(spatial_activity, axis=(1,2))
     max_activity = np.max(cell_activity_levels)
     normalized_activity = cell_activity_levels / max_activity if max_activity > 0 else cell_activity_levels
-    
-    for cell in range(n_cells):
+
+    for cell in tqdm(range(n_cells), desc="Testing cell reliability"):
         # Skip cells with too little activity
         if normalized_activity[cell] < min_activity_threshold:
             continue
@@ -625,3 +626,84 @@ def plot_reliable_cells_waterfall(spatial_activity, reliable_cells, max_cells=10
     plt.tight_layout()
     return fig
 
+def evaluate_pattern_similarity(spatial_activity, min_pattern_corr=0.4, peak_distance_threshold=5):
+    """
+    Evaluates both correlation and pattern similarity between odd and even trials.
+    
+    Parameters:
+    -----------
+    spatial_activity : numpy.ndarray
+        Activity matrix (n_cells x n_trials x n_spatial_bins)
+    min_pattern_corr : float
+        Minimum correlation threshold for pattern similarity
+    peak_distance_threshold : int
+        Maximum allowed distance between peaks in odd and even trials (in bins)
+        
+    Returns:
+    --------
+    pattern_reliable : numpy.ndarray
+        Boolean array of cells with consistent patterns
+    odd_even_corr : numpy.ndarray
+        Correlation between odd and even trials for each cell
+    peak_distances : numpy.ndarray
+        Distance between peaks in odd and even trials for each cell
+    """
+    n_cells, n_trials, n_bins = spatial_activity.shape
+    
+    # Initialize output arrays
+    pattern_reliable = np.zeros(n_cells, dtype=bool)
+    odd_even_corr = np.zeros(n_cells)
+    peak_distances = np.zeros(n_cells)
+    
+    # Separate odd and even trials
+    odd_trials = np.arange(0, n_trials, 2)
+    even_trials = np.arange(1, n_trials, 2)
+    
+    for cell in range(n_cells):
+        # Calculate mean activity for odd and even trials
+        odd_mean = np.mean(spatial_activity[cell, odd_trials], axis=0)
+        even_mean = np.mean(spatial_activity[cell, even_trials], axis=0)
+        
+        # Calculate correlation between odd and even mean activity patterns
+        odd_even_corr[cell] = np.corrcoef(odd_mean, even_mean)[0, 1]
+        
+        # Find peaks in odd and even trials
+        odd_peak = np.argmax(odd_mean)
+        even_peak = np.argmax(even_mean)
+        
+        # Calculate shortest distance between peaks (accounting for circular track)
+        raw_distance = abs(odd_peak - even_peak)
+        circular_distance = min(raw_distance, n_bins - raw_distance)
+        peak_distances[cell] = circular_distance
+        
+        # Check if patterns are similar (high correlation and consistent peak location)
+        if (odd_even_corr[cell] >= min_pattern_corr and 
+            peak_distances[cell] <= peak_distance_threshold):
+            pattern_reliable[cell] = True
+    
+    return pattern_reliable, odd_even_corr, peak_distances
+
+def combined_reliability_test(spatial_activity, n_shuffles=1000, 
+                             cc_percentile=95, cohen_threshold=0.5,
+                             min_cc_threshold=0.2, min_activity_threshold=0.1,
+                             min_pattern_corr=0.4, peak_distance_threshold=5):
+    """
+    Combined reliability test checking both trial-to-trial reliability and odd-even pattern similarity
+    """
+    # Run original reliability test
+    reliable_cells, avg_cc, cohens_d, iter_cc, norm_activity = test_cell_reliability(
+        spatial_activity, n_shuffles, cc_percentile, cohen_threshold,
+        min_cc_threshold, min_activity_threshold
+    )
+    
+    # Run pattern similarity test
+    pattern_reliable, odd_even_corr, peak_distances = evaluate_pattern_similarity(
+        spatial_activity, min_pattern_corr, peak_distance_threshold
+    )
+    
+    # Combine results (cells must pass both tests)
+    combined_reliable = reliable_cells & pattern_reliable
+    
+    return (combined_reliable, reliable_cells, pattern_reliable, 
+            avg_cc, cohens_d, odd_even_corr, peak_distances, norm_activity)
+    

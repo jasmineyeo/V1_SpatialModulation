@@ -2,6 +2,149 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d
 import matplotlib.pyplot as plt
 
+def find_temporal_offset(twoP_data, new_VR_data, framerate):
+    from helper import SpikeSmoothing, ReliabilityTesting as RT, spatial_discretization as SD, BehavioralDataFiltering as DF
+    # Find the temporal offset between the twoP and VR data
+            
+    # Define offsets to test (in frames)
+    offset_frames_list = [1, 2, 3, 4, 5, 7]
+
+    # Dictionary to store results
+    offset_results = {}
+
+    # Loop through offsets
+    for offset_frames in offset_frames_list:
+        print(f"\n\nTesting offset: {offset_frames} frames ({offset_frames/framerate:.2f} seconds)")
+        
+        # Apply offset to original data
+        offset_spike_data = SpikeSmoothing.apply_temporal_offset(twoP_data['sps'], offset_frames)
+        
+        # Apply smoothing
+        smoothed = SpikeSmoothing.smooth_spikes(offset_spike_data, framerate, window_ms=500)
+        
+        # Process data with trial filtering
+        filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_trial_filtering(
+            smoothed, 
+            new_VR_data['interp_location'],
+            min_trial_duration_seconds=5, 
+            max_trial_duration_seconds=120,
+            framerate=framerate
+        )
+        
+        if n_valid_laps == 0:
+            print(f"No valid laps for offset {offset_frames}")
+            continue
+        
+        # single_revolution_VR = 282.415
+        # single_revolution_treadmill = 27.8
+        # single_lap_VR = 1726.99731 ### = 1146 when VR length was 125 at gain = 1.15 
+        
+        single_revolution_VR = 282.415
+        single_revolution_treadmill = 27.8
+        single_lap_VR = 1320.645683 ### = 1146 when VR length was 125 at gain = 1.15 
+        single_lap_treadmill = single_revolution_treadmill * single_lap_VR / single_revolution_VR
+
+        # single_revolution_VR = 282.415
+        # single_revolution_treadmill = 27.8
+        # single_lap_VR = 1126.0667 ### = 1146 when VR length was 125 at gain = 1.15 
+        
+        single_lap_treadmill = single_revolution_treadmill * single_lap_VR / single_revolution_VR
+
+
+        # Perform spatial assignment
+        spatial_activity, spatial_bins, trial_averaged_activity, bin_centers = SD.spatial_assignment(
+            n_valid_laps,
+            filtered_spks_laps, 
+            filtered_location_laps, 
+            single_lap_treadmill
+        )
+        
+        # Apply spatial smoothing
+        smoothed_spatial_activity = SpikeSmoothing.spatial_smooth(spatial_activity, window_cm=10)
+
+
+        # Test for reliability
+        reliable_cells, avg_cc, cohens_d, iter_cc, _ = RT.test_cell_reliability(
+            smoothed_spatial_activity,
+            n_shuffles=100,           
+            cc_percentile=90,          
+            cohen_threshold=0.8,       
+            min_cc_threshold=0.2,      
+            min_activity_threshold=0.0, 
+        )
+
+        # Store results
+        offset_results[offset_frames] = {
+            'reliable_cells': reliable_cells,
+            'reliable_count': np.sum(reliable_cells),
+            'avg_cc': avg_cc,
+            'cohens_d': cohens_d,
+            'spatial_activity': smoothed_spatial_activity,
+            'n_valid_laps': n_valid_laps
+        }
+
+        # Print summary
+        print(f"Offset {offset_frames}: Found {np.sum(reliable_cells)} reliable cells out of {len(reliable_cells)}")
+        print(f"Mean correlation for reliable cells: {np.mean(avg_cc[reliable_cells]):.3f}")
+        print(f"Mean Cohen's D for reliable cells: {np.mean(cohens_d[reliable_cells]):.3f}")
+        
+    # Extract metrics for visualization
+    valid_offsets = list(offset_results.keys())
+    reliable_counts = [offset_results[offset]['reliable_count'] for offset in valid_offsets]
+    avg_cc_means = [np.mean(offset_results[offset]['avg_cc'][offset_results[offset]['reliable_cells']]) 
+                if np.sum(offset_results[offset]['reliable_cells']) > 0 else 0
+                for offset in valid_offsets]
+    cohens_d_means = [np.mean(offset_results[offset]['cohens_d'][offset_results[offset]['reliable_cells']])
+                    if np.sum(offset_results[offset]['reliable_cells']) > 0 else 0
+                    for offset in valid_offsets]
+
+    # Create figure
+    fig, axes = plt.subplots(3, 1, figsize=(10, 12), sharex=True)
+
+    # Plot reliable cell count
+    axes[0].plot(valid_offsets, reliable_counts, 'o-', color='blue', linewidth=2)
+    axes[0].set_ylabel('Number of Reliable Cells')
+    axes[0].set_title('Effect of Temporal Offset on Cell Reliability Metrics')
+    axes[0].grid(True, alpha=0.3)
+
+    # Plot mean correlation coefficient
+    axes[1].plot(valid_offsets, avg_cc_means, 'o-', color='green', linewidth=2)
+    axes[1].set_ylabel('Mean Correlation Coefficient')
+    axes[1].grid(True, alpha=0.3)
+
+    # Plot mean Cohen's D
+    axes[2].plot(valid_offsets, cohens_d_means, 'o-', color='red', linewidth=2)
+    axes[2].set_xlabel('Offset (frames)')
+    axes[2].set_ylabel("Mean Cohen's D")
+    axes[2].grid(True, alpha=0.3)
+
+    # Find optimal offset (if results exist)
+    if len(valid_offsets) > 0:
+        # Normalize metrics for weighted average
+        norm_reliable = np.array(reliable_counts) / np.max(reliable_counts) if np.max(reliable_counts) > 0 else np.zeros_like(reliable_counts)
+        norm_cc = np.array(avg_cc_means) / np.max(avg_cc_means) if np.max(avg_cc_means) > 0 else np.zeros_like(avg_cc_means)
+        norm_d = np.array(cohens_d_means) / np.max(cohens_d_means) if np.max(cohens_d_means) > 0 else np.zeros_like(cohens_d_means)
+        
+        # Weighted sum of normalized metrics
+        combined_metric = (0.2 * norm_reliable + 0.4 * norm_cc + 0.4 * norm_d)
+        # combined_metric = (norm_reliable + norm_cc + norm_d) / 3
+        best_idx = np.argmax(combined_metric)
+        best_offset = valid_offsets[best_idx]
+        
+        # Add vertical line at optimal offset
+        for ax in axes:
+            ax.axvline(x=best_offset, color='black', linestyle='--', alpha=0.7)
+            ax.text(best_offset, ax.get_ylim()[1]*0.95, f'Optimal: {best_offset}', 
+                horizontalalignment='center', verticalalignment='top')
+        
+        print(f"\nBest offset: {best_offset} frames ({best_offset/framerate:.2f} seconds)")
+        print(f"- Reliable cells: {offset_results[best_offset]['reliable_count']}")
+        print(f"- Mean correlation: {np.mean(offset_results[best_offset]['avg_cc'][offset_results[best_offset]['reliable_cells']]):.3f}")
+        print(f"- Mean Cohen's D: {np.mean(offset_results[best_offset]['cohens_d'][offset_results[best_offset]['reliable_cells']]):.3f}")
+
+    plt.tight_layout()
+    # plt.show()   
+
 def apply_temporal_offset(spike_data, offset_frames):
     """
     Apply a temporal offset to spike data relative to location data.
