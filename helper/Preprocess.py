@@ -43,40 +43,65 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
     twop_dict, vr_dict = procData.align_data()
 
     # 2a. Find temporal offset, which yields the best alignment between 2p and behavior data
-    # best_offset = SpikeSmoothing.find_temporal_offset(twop_dict, vr_dict, framerate)
+    # optimal_offset, _, _ = SpikeSmoothing.run_offset_optimization(twop_filepath, vr_filepath)
+
+    # Use the optimal offset in your main preprocessing
+    # offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], optimal_offset)
+    offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], 6)
 
     # 2b. Smooth the deconvolved traces using a 250 ms Gaussian window
-    offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], 0)
-    smoothed = SpikeSmoothing.smooth_spikes(offset_spike_data, framerate, window_ms=500)
+    smoothed = SpikeSmoothing.smooth_spikes(offset_spike_data, framerate, window_ms=250)
     twop_dict['smoothed_spks'] = smoothed
 
     # 2c. Remove inactive data points
     min_trial_duration_seconds = 5
     max_trial_duration_seconds = 60
 
-    filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_trial_filtering(
-        twop_dict['smoothed_spks'], 
+    # filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_trial_filtering(
+    #     twop_dict['smoothed_spks'], 
+    #     vr_dict['interp_location'],
+    #     min_trial_duration_seconds = min_trial_duration_seconds, 
+    #     max_trial_duration_seconds = max_trial_duration_seconds,
+    #     framerate=framerate
+    # )
+    
+    
+    # NEW:
+    filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_speed_filtering(
+        smoothed, 
         vr_dict['interp_location'],
-        min_trial_duration_seconds = min_trial_duration_seconds, 
-        max_trial_duration_seconds = max_trial_duration_seconds,
-        framerate=framerate
+        min_trial_duration_seconds=min_trial_duration_seconds, 
+        max_trial_duration_seconds=max_trial_duration_seconds,  # Reduced from 60s
+        framerate=framerate,
+        min_speed_cm_s=2.0,  # New speed threshold
+        frames_to_keep=5     # Keep some transition frames
     )
 
-    # 3. Spatial discretization (divide the VR corridor into ~110 bins, each representing 1cm and assign each data point to its corresponding spatial bin)
-    # # when VR length was 300 at gain = 1.15 - 25/03/20 
-    single_revolution_VR = 282.415
-    single_revolution_treadmill = 27.8
-    # single_lap_VR = 1726.99731 ### = 1146 when VR length was 125 at gain = 1.15 
-    # single_lap_VR = 1320.645683 ### = 1146 when VR length was 125 at gain = 1.15 
-    single_lap_VR = 1320.645683 ### = 1146 when VR length was 125 at gain = 1.15 
-    single_lap_treadmill = single_revolution_treadmill * single_lap_VR / single_revolution_VR
 
-    # Then perform spatial assignment on the filtered data
-    spatial_activity, spatial_bins, trial_averaged_activity, bin_centers = SD.spatial_assignment(
+    # 3. Spatial discretization (divide the VR corridor into ~110 bins, each representing 1cm and assign each data point to its corresponding spatial bin)
+    # # # when VR length was 300 at gain = 1.15 - 25/03/20 
+    # single_revolution_VR = 282.415
+    # single_revolution_treadmill = 27.8
+    # # single_lap_VR = 1726.99731 ### = 1146 when VR length was 125 at gain = 1.15 
+    # # single_lap_VR = 1320.645683 ### = 1146 when VR length was 125 at gain = 1.15 
+    # single_lap_VR = 1320.645683 ### = 1146 when VR length was 125 at gain = 1.15 
+    # single_lap_treadmill = single_revolution_treadmill * single_lap_VR / single_revolution_VR
+
+    # # Then perform spatial assignment on the filtered data
+    # spatial_activity, spatial_bins, trial_averaged_activity, bin_centers = SD.spatial_assignment(
+    #     n_valid_laps,
+    #     filtered_spks_laps, 
+    #     filtered_location_laps, 
+    #     single_lap_treadmill
+    # )
+
+
+    # Update spatial assignment call:
+    spatial_activity, spatial_bins, trial_averaged_activity, bin_centers = SD.spatial_assignment_with_physical_units(
         n_valid_laps,
         filtered_spks_laps, 
-        filtered_location_laps, 
-        single_lap_treadmill
+        filtered_location_laps,  # Now in cm
+        physical_lap_length_cm=130
     )
 
     window_cm = 5
@@ -88,10 +113,10 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
     # Run the analysis
     combined_reliable, reliable_cells, _, avg_cc, cohens_d, _, _, _ = RT.combined_reliability_test(
         smoothed_spatial_activity,
-        n_shuffles=100,           # Use 1000+ for final analysis
-        cc_percentile=90,          # 90th percentile threshold for CC
-        cohen_threshold=1,       # Medium-large effect size
-        min_cc_threshold=0.2,      # Minimum correlation required
+        n_shuffles=50,           # Use 1000+ for final analysis
+        cc_percentile=99,          # 90th percentile threshold for CC
+        cohen_threshold=1.2,       # Medium-large effect size
+        min_cc_threshold=0.3,      # Minimum correlation required
         min_activity_threshold=0.0, # Minimum activity level (relative to max)
         min_pattern_corr=0.3, 
         peak_distance_threshold=5
@@ -106,7 +131,7 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
         normalized_spatial_activity,
         # reliable_cells,
         combined_reliable,
-        max_cells=50,              # Show up to 10 reliable cells
+        max_cells=5,              # Show up to 10 reliable cells
         # max_cells=np.sum(combined_reliable),                # Show up to 10 reliable cells
         avg_cc=avg_cc,               # Optional correlation coefficients
         cohen_d=cohens_d,            # Optional Cohen's D values
@@ -126,7 +151,6 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
 
 
 if __name__ == "__main__":
-    # Replace 'your_config_file_path.yaml' with the actual path to your config file
     twop_filepath = r'F:\2P\spmod\250811_JSY_JSY044_SpatialModulation_Day1\TSeries-08112025-1505-001'
     vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_08112025_04-04-19.txt"
     preprocess_2pVR(twop_filepath, vr_filepath)      

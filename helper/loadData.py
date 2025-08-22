@@ -75,12 +75,12 @@ class dataLoader:
         # for animal facing VR computer, raw image does go from layer 2/3 to layer 6 (top-bottom)
         im_rotated = np.rot90(im, k=-1)
 
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
-        ax1.imshow(im)
-        ax1.set_title("raw_image")
+        # fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 6))
+        # ax1.imshow(im)
+        # ax1.set_title("raw_image")
 
-        ax2.imshow(im_rotated)
-        ax2.set_title("rotated_image")
+        # ax2.imshow(im_rotated)
+        # ax2.set_title("rotated_image")
         # plt.show()
 
         # Load VRlog
@@ -96,8 +96,8 @@ class dataLoader:
         VR_data['event'] = np.array([line[2] for line in rawVR_data])
         VR_data['location'] = np.array([float(line[3]) for line in rawVR_data])
 
-        # for any VR_data['location'] that is less than -40, set it to -40
-        # VR_data['location'][VR_data['location'] < -40] = -40
+        # for any VR_data['location'] that is less than 0, set it to 0
+        VR_data['location'][VR_data['location'] < 0] = 0
 
         # Find the index of the first 's' in VR_data['event']
         start_index = np.where(VR_data['event'] == 's')[0][0]
@@ -144,9 +144,6 @@ class dataLoader:
         new_VR_data['event'] = VR_data['event'][:closest_index]
         new_VR_data['location'] = VR_data['location'][:closest_index]
 
-        # print(new_VR_data['RelativeT'][-1])
-        new_VR_data['location'][new_VR_data['location'] < -460] = -460
-
         # Calculate relative time points for VR_data and twoP_data
         twop_relativeT = twoP_data['AbsoluteT'] - twoP_data['AbsoluteT'][0]
 
@@ -163,12 +160,12 @@ class dataLoader:
         print(f"size of new_VR_data['location'] is {new_VR_data['location'].shape}")
 
         # Plot the interpolated location
-        plt.figure(figsize=(20, 5))
-        plt.plot(twoP_data['RelativeT'], new_VR_data['interp_location']+100, label="Interpolated Location", alpha=0.5)
-        plt.plot(new_VR_data['RelativeT'], new_VR_data['location'], label="Original Location", alpha=0.5)
-        plt.xlabel("Time (s)")
-        plt.ylabel("Location (AU)")
-        plt.legend()
+        # plt.figure(figsize=(20, 5))
+        # plt.plot(twoP_data['RelativeT'], new_VR_data['interp_location']+100, label="Interpolated Location", alpha=0.5)
+        # plt.plot(new_VR_data['RelativeT'], new_VR_data['location'], label="Original Location", alpha=0.5)
+        # plt.xlabel("Time (s)")
+        # plt.ylabel("Location (AU)")
+        # plt.legend()
         # plt.show()
 
         self.new_VR_data = new_VR_data

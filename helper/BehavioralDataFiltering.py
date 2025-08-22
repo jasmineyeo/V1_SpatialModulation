@@ -1,5 +1,45 @@
 import numpy as np
 import matplotlib.pyplot as plt
+from itertools import groupby
+from operator import itemgetter
+
+
+def calculate_vr_speed_and_distance(location_data, framerate):
+    """
+    Calculate running speed in cm/s and convert location to physical distance.
+    
+    Parameters:
+    -----------
+    location_data : numpy.ndarray
+        VR location data in arbitrary units
+    framerate : float
+        Recording framerate in Hz
+        
+    Returns:
+    --------
+    speed_cm_s : numpy.ndarray
+        Running speed in cm/s
+    location_cm : numpy.ndarray
+        Location converted to physical distance in cm
+    conversion_factor : float
+        Conversion factor used (cm per AU)
+    """
+    # Calculate VR range for this specific dataset
+    vr_range = np.max(location_data) - np.min(location_data)
+    
+    # Convert to physical distance: ~379 AU = 130 cm
+    conversion_factor = 130.0 / vr_range  # cm per AU
+    
+    # Convert location to cm
+    location_cm = location_data * conversion_factor
+    
+    # Calculate speed in cm/s
+    speed_cm_s = np.abs(np.diff(location_cm)) * framerate
+    
+    # Pad to match original length (repeat first value)
+    speed_cm_s = np.concatenate(([speed_cm_s[0]], speed_cm_s))
+    
+    return speed_cm_s, location_cm, conversion_factor
 
 def reshape_into_laps(spks, location, high_percentile=90, low_percentile=10, plot_detection=True):
     """
@@ -123,6 +163,178 @@ def reshape_into_laps(spks, location, high_percentile=90, low_percentile=10, plo
     
     return spks_laps, location_laps, n_laps
 
+def process_data_with_speed_filtering(spks, location, 
+                                    min_trial_duration_seconds=5, 
+                                    max_trial_duration_seconds=30, 
+                                    framerate=10, 
+                                    min_speed_cm_s=2.0,
+                                    frames_to_keep=5):
+    """
+    Process 2P and VR data with improved speed-based filtering:
+    1. Split data into trials/laps
+    2. Filter out trials that take too long or too short
+    3. Remove periods with speed below threshold (stationary periods)
+    
+    Parameters:
+    -----------
+    spks : numpy.ndarray
+        Spike data (cells x time)
+    location : numpy.ndarray
+        Location data (time,)
+    min_trial_duration_seconds : float
+        Minimum duration for a valid trial in seconds
+    max_trial_duration_seconds : float
+        Maximum duration for a valid trial in seconds
+    framerate : float
+        Frames per second of recording
+    min_speed_cm_s : float
+        Minimum speed threshold in cm/s (remove periods below this)
+    frames_to_keep : int
+        Number of frames to keep at the beginning and end of removed periods
+        
+    Returns:
+    --------
+    filtered_spks_laps : list
+        List of filtered spike data for each valid lap
+    filtered_location_laps : list
+        List of filtered location data for each valid lap (in cm)
+    n_valid_laps : int
+        Number of valid laps after filtering
+    """
+    
+    # Step 1: Calculate speed and convert to physical units
+    print("Converting VR units to physical distance and calculating speed...")
+    speed_cm_s, location_cm, conversion_factor = calculate_vr_speed_and_distance(location, framerate)
+    
+    print(f"VR conversion factor: {conversion_factor:.4f} cm per AU")
+    print(f"Speed range: {np.min(speed_cm_s):.2f} to {np.max(speed_cm_s):.2f} cm/s")
+    
+    # Step 2: Reshape data into laps using original location (AU) for lap detection
+    spks_laps, location_laps, n_laps = reshape_into_laps(spks, location, plot_detection=True)
+    print("Number of detected laps:", n_laps)
+    
+    if n_laps == 0:
+        print("No laps detected!")
+        return None, None, 0
+    
+    # Step 3: Filter out trials by duration
+    min_frames_per_trial = min_trial_duration_seconds * framerate
+    max_frames_per_trial = max_trial_duration_seconds * framerate
+    valid_trials = []
+    
+    print(f"\nFiltering trials by duration ({min_trial_duration_seconds}s to {max_trial_duration_seconds}s):")
+    for i, (lap_spks, lap_loc) in enumerate(zip(spks_laps, location_laps)):
+        trial_duration_frames = lap_spks.shape[1]
+        trial_duration_seconds = trial_duration_frames / framerate
+        
+        if min_frames_per_trial <= trial_duration_frames <= max_frames_per_trial:
+            valid_trials.append(i)
+            print(f"  Trial {i+1}: {trial_duration_seconds:.2f} seconds - VALID")
+        else:
+            reason = "TOO SHORT" if trial_duration_frames < min_frames_per_trial else "TOO LONG"
+            print(f"  Trial {i+1}: {trial_duration_seconds:.2f} seconds - {reason} (skipping)")
+    
+    # Step 4: For valid trials, remove low-speed periods
+    filtered_spks_laps = []
+    filtered_location_laps = []
+    
+    print(f"\nApplying speed filtering (min speed: {min_speed_cm_s} cm/s):")
+    
+    for i in valid_trials:
+        lap_spks = spks_laps[i]
+        lap_loc = location_laps[i]  # This is in AU
+        
+        # Convert this lap's location to cm
+        lap_loc_cm = lap_loc * conversion_factor
+        
+        # Calculate speed for this lap
+        lap_speed = np.abs(np.diff(lap_loc_cm)) * framerate
+        lap_speed = np.concatenate(([lap_speed[0]], lap_speed))  # Pad to match length
+        
+        # Identify low-speed periods
+        slow_mask = lap_speed < min_speed_cm_s
+        slow_indices = np.where(slow_mask)[0]
+        
+        # Group consecutive slow indices
+        def group_consecutive(data):
+            for k, g in groupby(enumerate(data), lambda x: x[0] - x[1]):
+                yield list(map(itemgetter(1), g))
+        
+        slow_periods = list(group_consecutive(slow_indices))
+        
+        # Create mask for which frames to keep
+        mask = np.ones(len(lap_loc), dtype=bool)
+        
+        removed_frames = 0
+        for period in slow_periods:
+            if len(period) > 2 * frames_to_keep:
+                start_idx = period[0]
+                end_idx = period[-1]
+                
+                # Keep beginning and end, remove middle
+                mask[start_idx + frames_to_keep:end_idx - frames_to_keep + 1] = False
+                removed_frames += (end_idx - frames_to_keep + 1) - (start_idx + frames_to_keep)
+        
+        # Apply mask
+        filtered_spks_laps.append(lap_spks[:, mask])
+        filtered_location_laps.append(lap_loc_cm[mask])  # Store in cm
+        
+        # Report filtering results
+        original_frames = len(lap_loc)
+        kept_frames = len(lap_loc_cm[mask])
+        print(f"  Lap {i+1}: {kept_frames}/{original_frames} frames kept " +
+              f"({kept_frames/original_frames*100:.1f}%), removed {removed_frames} slow frames")
+    
+    n_valid_laps = len(valid_trials)
+    
+    print(f"\nFinal result: {n_valid_laps} valid laps after duration and speed filtering")
+    
+    # Plot speed distribution for validation
+    plot_speed_distribution(speed_cm_s, min_speed_cm_s)
+    
+    return filtered_spks_laps, filtered_location_laps, n_valid_laps
+
+def plot_speed_distribution(speed_cm_s, min_speed_threshold):
+    """Plot speed distribution to visualize filtering threshold."""
+    
+    plt.figure(figsize=(12, 4))
+    
+    # Speed histogram
+    plt.subplot(1, 2, 1)
+    plt.hist(speed_cm_s, bins=50, alpha=0.7, color='blue', edgecolor='black')
+    plt.axvline(min_speed_threshold, color='red', linestyle='--', linewidth=2, 
+                label=f'Min speed threshold: {min_speed_threshold} cm/s')
+    plt.xlabel('Speed (cm/s)')
+    plt.ylabel('Count')
+    plt.title('Speed Distribution')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    # Speed over time (first 5000 points for visibility)
+    plt.subplot(1, 2, 2)
+    n_points = min(5000, len(speed_cm_s))
+    time_axis = np.arange(n_points) / 10  # Assuming 10 Hz
+    plt.plot(time_axis, speed_cm_s[:n_points], 'b-', alpha=0.7, linewidth=0.5)
+    plt.axhline(min_speed_threshold, color='red', linestyle='--', linewidth=2,
+                label=f'Min speed threshold: {min_speed_threshold} cm/s')
+    plt.xlabel('Time (s)')
+    plt.ylabel('Speed (cm/s)')
+    plt.title('Speed Over Time (first 500s)')
+    plt.legend()
+    plt.grid(True, alpha=0.3)
+    
+    plt.tight_layout()
+    plt.show()
+    
+    # Print statistics
+    below_threshold = np.sum(speed_cm_s < min_speed_threshold)
+    total_frames = len(speed_cm_s)
+    print(f"\nSpeed filtering statistics:")
+    print(f"  Frames below {min_speed_threshold} cm/s: {below_threshold}/{total_frames} ({below_threshold/total_frames*100:.1f}%)")
+    print(f"  Mean speed: {np.mean(speed_cm_s):.2f} cm/s")
+    print(f"  Median speed: {np.median(speed_cm_s):.2f} cm/s")
+    print(f"  Speed range: {np.min(speed_cm_s):.2f} to {np.max(speed_cm_s):.2f} cm/s")
+
 def process_data_with_trial_filtering(spks, location, 
                                       min_trial_duration_seconds=5, 
                                       max_trial_duration_seconds=30, 
@@ -161,7 +373,7 @@ def process_data_with_trial_filtering(spks, location,
     """
     
     # Step 1: Reshape data into laps
-    spks_laps, location_laps, n_laps = reshape_into_laps(spks, location, plot_detection=True)
+    spks_laps, location_laps, n_laps = reshape_into_laps(spks, location, plot_detection=False)
     print("number of detected laps:", n_laps)
     
     if n_laps == 0:
@@ -226,11 +438,11 @@ def process_data_with_trial_filtering(spks, location,
     
     n_valid_laps = len(valid_trials)
     
-    print(f"\nRetained {n_valid_laps} valid laps after filtering")
-    for i, lap_idx in enumerate(valid_trials):
-        original_frames = len(location_laps[lap_idx])
-        filtered_frames = len(filtered_location_laps[i])
-        print(f"  Lap {lap_idx+1}: {filtered_frames}/{original_frames} frames kept" + 
-              f" ({filtered_frames/original_frames*100:.1f}%)")
+    # print(f"\nRetained {n_valid_laps} valid laps after filtering")
+    # for i, lap_idx in enumerate(valid_trials):
+    #     original_frames = len(location_laps[lap_idx])
+    #     filtered_frames = len(filtered_location_laps[i])
+    #     # print(f"  Lap {lap_idx+1}: {filtered_frames}/{original_frames} frames kept" + 
+    #     #       f" ({filtered_frames/original_frames*100:.1f}%)")
     
     return filtered_spks_laps, filtered_location_laps, n_valid_laps
