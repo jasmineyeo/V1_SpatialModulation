@@ -290,7 +290,7 @@ def process_data_with_speed_filtering(spks, location,
     print(f"\nFinal result: {n_valid_laps} valid laps after duration and speed filtering")
     
     # Plot speed distribution for validation
-    plot_speed_distribution(speed_cm_s, min_speed_cm_s)
+    # plot_speed_distribution(speed_cm_s, min_speed_cm_s)
     
     return filtered_spks_laps, filtered_location_laps, n_valid_laps
 

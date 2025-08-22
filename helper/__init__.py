@@ -59,7 +59,15 @@ from .ReliabilityTesting import (
     plot_reliable_cells_grid, 
     plot_reliable_cells_waterfall, 
     evaluate_pattern_similarity, 
-    combined_reliability_test)
+    combined_reliability_test,
+    combined_reliability_test_improved,
+    find_robust_peak,
+    evaluate_pattern_similarity_improved,
+    test_cell_reliability_improved,
+    improved_activity_threshold_check,
+    plot_individual_reliable_cells,
+    create_summary_figure,
+    save_all_reliable_cell_plots)
 
 from .ResponseVisualization import (
     create_response_plot, 
@@ -91,7 +99,13 @@ __all__ = ["read_xml", "write_h5", "recursively_save_dict_contents_to_group", "r
            "calculate_vr_speed_and_distance", "reshape_into_laps", "process_data_with_speed_filtering",
            "plot_speed_distribution", "process_data_with_trial_filtering",
            "spatial_assignment", "spatial_assignment_with_physical_units",
-           "test_cell_reliability", "test_cell_reliability_with_edge_visualization", "plot_edge_activity_distributions", "visualize_cell_edge_profiles", "normalize_spatial_activity", "plot_reliable_cells_side_by_side", "plot_reliable_cells_grid","plot_reliable_cells_waterfall", "evaluate_pattern_similarity", "combined_reliability_test", 
+           "test_cell_reliability", "test_cell_reliability_with_edge_visualization", "plot_edge_activity_distributions", "visualize_cell_edge_profiles", "normalize_spatial_activity", "plot_reliable_cells_side_by_side", "plot_reliable_cells_grid","plot_reliable_cells_waterfall", "evaluate_pattern_similarity", "combined_reliability_test", "combined_reliability_test_improved",
+           "find_robust_peak",
+           "evaluate_pattern_similarity_improved",
+           "test_cell_reliability_improved",
+           "improved_activity_threshold_check", "plot_individual_reliable_cells",
+           "create_summary_figure",
+           "save_all_reliable_cell_plots",
            "create_response_plot", "create_waterfall_plot",
            "double_gaussian", "fit_response_profile", "calculate_SMI", "calculate_SMI_BBBB", "plot_SMI_results", "plot_SMI_results_BBBB", "analyze_spatial_modulation", "analyze_spatial_modulation_BBBB",
            "dataLoader",
