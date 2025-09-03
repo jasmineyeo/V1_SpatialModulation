@@ -1,5 +1,5 @@
 """
-Preprocessing and analysis for laminar spatial modulation
+Functions helping preprocessing and analysis for laminar spatial modulation
 JSY, 2025
 """
 

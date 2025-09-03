@@ -2,10 +2,6 @@ import numpy as np
 from scipy.ndimage import gaussian_filter1d
 import matplotlib.pyplot as plt
 from helper import BehavioralDataFiltering as DF, SpatialDiscretization as SD
-import numpy as np
-import matplotlib.pyplot as plt
-from scipy.ndimage import gaussian_filter1d
-from helper import SpikeSmoothing, BehavioralDataFiltering as DF, SpatialDiscretization as SD
 
 def calculate_sparsity_index(spatial_response):
     """
@@ -167,10 +163,10 @@ def calculate_sharpness_metrics_for_offset(twop_dict, vr_dict, offset_frames, fr
         Dictionary containing sharpness metrics
     """
     # Apply temporal offset
-    offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], offset_frames)
+    offset_spike_data = apply_temporal_offset(twop_dict['sps'], offset_frames)
     
     # Apply smoothing
-    smoothed = SpikeSmoothing.smooth_spikes(offset_spike_data, framerate, window_ms=500)
+    smoothed = smooth_spikes(offset_spike_data, framerate, window_ms=500)
     
     # Filter trials
     filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_trial_filtering(
@@ -198,7 +194,7 @@ def calculate_sharpness_metrics_for_offset(twop_dict, vr_dict, offset_frames, fr
     )
     
     # Apply spatial smoothing
-    smoothed_spatial_activity = SpikeSmoothing.spatial_smooth(spatial_activity, window_cm=5)
+    smoothed_spatial_activity = spatial_smooth(spatial_activity, window_cm=5)
     
     # Apply quality filters
     valid_cells = apply_quality_filters(smoothed_spatial_activity, 
@@ -312,29 +308,29 @@ def find_optimal_temporal_offset(twop_dict, vr_dict, framerate, offset_range=Non
     # Calculate consensus optimal offset (median of best offsets)
     optimal_offset = int(np.median(list(best_offsets.values())))
     
-    # # Print results
-    # print(f"\n" + "="*60)
-    # print("OPTIMAL TEMPORAL OFFSET RESULTS:")
-    # print("="*60)
+    # Print results
+    print(f"\n" + "="*60)
+    print("OPTIMAL TEMPORAL OFFSET RESULTS:")
+    print("="*60)
     
-    # # Map metric names to the correct keys in offset_results
-    # metric_key_mapping = {
-    #     'sparsity': 'median_sparsity',
-    #     'spatial_info': 'median_spatial_info', 
-    #     'peak_to_baseline': 'median_peak_to_baseline',
-    #     'cells_above_threshold': 'n_cells_above_threshold'
-    # }
+    # Map metric names to the correct keys in offset_results
+    metric_key_mapping = {
+        'sparsity': 'median_sparsity',
+        'spatial_info': 'median_spatial_info', 
+        'peak_to_baseline': 'median_peak_to_baseline',
+        'cells_above_threshold': 'n_cells_above_threshold'
+    }
     
-    # for metric, best_offset in best_offsets.items():
-    #     key = metric_key_mapping[metric]
-    #     value = offset_results[best_offset][key]
-    #     print(f"{metric:20s}: {best_offset:2d} frames ({best_offset/framerate:.2f}s) | Value: {value:.4f}")
+    for metric, best_offset in best_offsets.items():
+        key = metric_key_mapping[metric]
+        value = offset_results[best_offset][key]
+        print(f"{metric:20s}: {best_offset:2d} frames ({best_offset/framerate:.2f}s) | Value: {value:.4f}")
     
-    # print(f"\nCONSENSUS OPTIMAL OFFSET: {optimal_offset} frames ({optimal_offset/framerate:.2f} seconds)")
-    # print("="*60)
+    print(f"\nCONSENSUS OPTIMAL OFFSET: {optimal_offset} frames ({optimal_offset/framerate:.2f} seconds)")
+    print("="*60)
     
     # # Create visualization
-    # create_offset_comparison_plot(offset_results, best_offsets, optimal_offset, framerate)
+    create_offset_comparison_plot(offset_results, best_offsets, optimal_offset, framerate)
     
     return offset_results, best_offsets, optimal_offset
 

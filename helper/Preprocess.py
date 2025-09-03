@@ -1,6 +1,5 @@
-### This script is used to preprocess the 2p data and corresponding treadmill behavior data and save the processed data -- before SMI calculation
-### JSY, 04/2025
-
+"""
+Preprocess.py
 ### This script is used to analyze the 2p data and corresponding treadmill behavior data
 ### 1. Preprocess 2p data and treadmill behavior data (load and align)
 ### 2a. Find temporal offset, which yields the best alignment between 2p and behavior data
@@ -10,26 +9,27 @@
 ### 4. Test for reliability for individual cells (calculate Pearson CC or cohen’s D)
 ### 5. Response Plot - plotting activity of all responsive cells (cross validation – split trials in half)
 
+This script is used to preprocess the 2p data and corresponding treadmill behavior data and save the processed data -- before SMI calculation
+JSY, 04/2025
+"""
+
 import sys
-import os
 
 parent_dir = r"C:\Users\jasmineyeo\Documents\GitHub\V1_SpatialModulation"
 sys.path.insert(0, parent_dir)
 
+import os
 import numpy as np
-import matplotlib.pyplot as plt
-from helper import dataLoader
-from helper import files
 import datetime
+from helper import dataLoader, files
 from helper import SpikeSmoothing, ReliabilityTesting as RT, SpatialDiscretization as SD, BehavioralDataFiltering as DF, ResponseVisualization as RV    
-
 from matplotlib import rcParams
+
 rcParams['legend.fontsize'] = 14
 rcParams['axes.labelsize'] = 14
 rcParams['axes.titlesize'] = 20
 rcParams['xtick.labelsize'] = 14
 rcParams['ytick.labelsize'] = 14
-
 
 def preprocess_2pVR(twop_filepath, vr_filepath):
     
@@ -44,7 +44,7 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
     twop_dict, vr_dict = procData.align_data()
 
     # 2a. Find temporal offset, which yields the best alignment between 2p and behavior data
-    # optimal_offset, _, _ = SpikeSmoothing.run_offset_optimization(twop_filepath, vr_filepath)
+    optimal_offset, _, _ = SpikeSmoothing.run_offset_optimization(twop_filepath, vr_filepath)
 
     # Use the optimal offset in your main preprocessing
     # offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], optimal_offset)
@@ -114,11 +114,11 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
     # Run the analysis
     combined_reliable, reliable_cells, _, avg_cc, cohens_d, _, _, _ = RT.combined_reliability_test_improved(
         smoothed_spatial_activity,
-        n_shuffles=50,           # Use 1000+ for final analysis
-        cc_percentile=95,          # 95th percentile threshold for CC
-        cohen_threshold=1.2,       # Medium-large effect size
+        n_shuffles=500,           # Use 1000+ for final analysis
+        cc_percentile=90,          # 90th percentile threshold for CC
+        cohen_threshold=0.8,       # Medium-large effect size
         min_cc_threshold=0.2,      # Minimum correlation required
-        min_pattern_corr=0.2,
+        min_pattern_corr=0.3,
         peak_distance_threshold=5,
         use_activity_threshold=True,  # Try both True and False
         activity_method='absolute_percentile'
@@ -174,19 +174,19 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
         'bin_centers': bin_centers,
         'twop_filepath': str(twop_filepath),
         'vr_filepath': str(vr_filepath),
-        'processing_timestamp': datetime.now().isoformat()  # Added
+        'processing_timestamp': datetime.datetime.now().isoformat()
     }
-
-    # Ensure directory exists
+    
+    # save preprocessed data 
     save_dir = os.path.dirname(twop_filepath) if os.path.isfile(twop_filepath) else twop_filepath
     _savepath = os.path.join(save_dir, f'{date}_{animal_id}_preproc.h5')
-    os.makedirs(os.path.dirname(_savepath), exist_ok=True)  # Added
-
+    os.makedirs(os.path.dirname(_savepath), exist_ok=True)
+    
     print('Writing preprocessed data to {}'.format(_savepath))    
     files.write_h5(_savepath, preprocessed_dict)
-    print('✅ Successfully saved!')  # Added confirmation
+    print('Successfully saved')
 
 if __name__ == "__main__":
-    twop_filepath = r'F:\2P\spmod\250811_JSY_JSY044_SpatialModulation_Day1\TSeries-08112025-1505-001'
-    vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_08112025_04-04-19.txt"
+    twop_filepath = r'F:\2P\spmod\250815_JSY_JSY044_SpatialModulation_Day5\TSeries-08152025-1527-002'
+    vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_08152025_05-30-39.txt"
     preprocess_2pVR(twop_filepath, vr_filepath)      
