@@ -98,6 +98,7 @@ class dataLoader:
 
         # for any VR_data['location'] that is less than 0, set it to 0
         VR_data['location'][VR_data['location'] < 0] = 0
+        # VR_data['location'][VR_data['location'] > 390] = 390
 
         # Find the index of the first 's' in VR_data['event']
         start_index = np.where(VR_data['event'] == 's')[0][0]
@@ -159,7 +160,7 @@ class dataLoader:
         print(f"size of interpolated_location is {interpolated_location.shape}")
         print(f"size of new_VR_data['location'] is {new_VR_data['location'].shape}")
 
-        # Plot the interpolated location
+        # # Plot the interpolated location
         # plt.figure(figsize=(20, 5))
         # plt.plot(twoP_data['RelativeT'], new_VR_data['interp_location']+100, label="Interpolated Location", alpha=0.5)
         # plt.plot(new_VR_data['RelativeT'], new_VR_data['location'], label="Original Location", alpha=0.5)

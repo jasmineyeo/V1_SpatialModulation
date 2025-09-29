@@ -9,11 +9,17 @@ from .files import (
     read_xml,
     write_h5,
     recursively_save_dict_contents_to_group,
-    recursively_load_dict_contents_from_group)
+    recursively_load_dict_contents_from_group,
+    read_h5)
 
 from .time import (
     time2float,
     time2str)
+from .CombineDatasets import (
+    DatasetCombiner)
+
+# from CellMatchingValidator import (
+#     CellMatchingValidator)
 
 from .twop import (
     TwoP)
@@ -73,15 +79,32 @@ from .ResponseVisualization import (
     create_response_plot, 
     create_waterfall_plot)
 
+# from .SpatialModulationIndex import (
+#     double_gaussian, 
+#     fit_response_profile, 
+#     calculate_SMI, 
+#     calculate_SMI_BBBB, 
+#     plot_SMI_results, 
+#     plot_SMI_results_BBBB, 
+#     analyze_spatial_modulation, 
+#     analyze_spatial_modulation_BBBB,
+#     calculate_SMI_improved,
+#     plot_SMI_results_improved,
+#     analyze_spatial_modulation_improved)
+
 from .SpatialModulationIndex import (
     double_gaussian, 
     fit_response_profile, 
-    calculate_SMI, 
-    calculate_SMI_BBBB, 
-    plot_SMI_results, 
-    plot_SMI_results_BBBB, 
-    analyze_spatial_modulation, 
-    analyze_spatial_modulation_BBBB)
+#     calculate_SMI, 
+#     calculate_SMI_BBBB, 
+#     plot_SMI_results, 
+#     plot_SMI_results_BBBB, 
+#     analyze_spatial_modulation, 
+#     analyze_spatial_modulation_BBBB,
+    calculate_SMI_improved,
+    plot_SMI_results_improved,
+    analyze_spatial_modulation_improved,
+    calculate_SMI_improved_debug)
 
 from .loadData import (
     dataLoader)
@@ -90,8 +113,10 @@ from .Preprocess import (
     preprocess_2pVR)
 
 # Specify what is available when you import the package
-__all__ = ["read_xml", "write_h5", "recursively_save_dict_contents_to_group", "recursively_load_dict_contents_from_group",
+__all__ = ["read_xml", "write_h5", "read_h5", "recursively_save_dict_contents_to_group", "recursively_load_dict_contents_from_group",
            "time2float", "time2str",
+            "DatasetCombiner",
+            "CellMatchingValidator",
            "TwoP",
            "calculate_sparsity_index", "calculate_spatial_information", "calculate_peak_to_baseline_ratio", "apply_quality_filters", "calculate_sharpness_metrics_for_offset", "find_optimal_temporal_offset", "create_offset_comparison_plot", "run_offset_optimization",
            "create_simple_before_after_comparison", "find_best_example_cells", "create_multiple_examples_split", "create_five_detailed_examples", "demonstrate_simple_offset_effect",
@@ -108,5 +133,7 @@ __all__ = ["read_xml", "write_h5", "recursively_save_dict_contents_to_group", "r
            "save_all_reliable_cell_plots",
            "create_response_plot", "create_waterfall_plot",
            "double_gaussian", "fit_response_profile", "calculate_SMI", "calculate_SMI_BBBB", "plot_SMI_results", "plot_SMI_results_BBBB", "analyze_spatial_modulation", "analyze_spatial_modulation_BBBB",
+           "calculate_SMI_improved", "plot_SMI_results_improved", "analyze_spatial_modulation_improved",
            "dataLoader",
+           "calculate_SMI_improved_debug",
            "preprocess_2pVR"]

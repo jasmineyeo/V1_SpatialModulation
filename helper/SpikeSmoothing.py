@@ -265,24 +265,25 @@ def find_optimal_temporal_offset(twop_dict, vr_dict, framerate, offset_range=Non
     if offset_range is None:
         offset_range = [-2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8]
     
-    print("Finding optimal temporal offset based on tuning curve sharpness...")
-    print(f"Testing offsets: {offset_range} frames")
-    print(f"Framerate: {framerate} Hz")
-    print("Positive offset = neural activity appears LATER relative to position")
+    # print("Finding optimal temporal offset based on tuning curve sharpness...")
+    # print(f"Testing offsets: {offset_range} frames")
+    # print(f"Framerate: {framerate} Hz")
+    # print("Positive offset = neural activity appears LATER relative to position")
     
     # Store results for each offset
     offset_results = {}
     
     for offset in offset_range:
-        print(f"Testing offset: {offset} frames ({offset/framerate:.2f} seconds)...", end=" ")
+        # print(f"Testing offset: {offset} frames ({offset/framerate:.2f} seconds)...", end=" ")
         
         metrics = calculate_sharpness_metrics_for_offset(twop_dict, vr_dict, offset, framerate)
         
         if metrics is not None:
             offset_results[offset] = metrics
-            print(f"✓ Valid cells: {metrics['n_valid_cells']}")
+            # print(f"✓ Valid cells: {metrics['n_valid_cells']}")
         else:
-            print("✗ No valid data")
+            # print("✗ No valid data")
+            pass
     
     if len(offset_results) == 0:
         print("ERROR: No valid results for any offset!")
@@ -305,8 +306,15 @@ def find_optimal_temporal_offset(twop_dict, vr_dict, framerate, offset_range=Non
         'cells_above_threshold': valid_offsets[np.argmax(cells_above_threshold)]
     }
     
+    best_offsets_foroptimal = {
+        'sparsity': valid_offsets[np.argmax(sparsity_values)],
+        'spatial_info': valid_offsets[np.argmax(spatial_info_values)],
+        # 'peak_to_baseline': valid_offsets[np.argmax(peak_baseline_values)],
+        # 'cells_above_threshold': valid_offsets[np.argmax(cells_above_threshold)]
+    }
+    
     # Calculate consensus optimal offset (median of best offsets)
-    optimal_offset = int(np.median(list(best_offsets.values())))
+    optimal_offset = int(np.median(list(best_offsets_foroptimal.values())))
     
     # Print results
     print(f"\n" + "="*60)
@@ -474,10 +482,10 @@ def create_simple_before_after_comparison(twop_dict, vr_dict, cell_idx, framerat
     def process_data_for_offset(offset):
         """Helper function to process data for a given offset."""
         # Apply temporal offset
-        offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], offset)
+        offset_spike_data = apply_temporal_offset(twop_dict['sps'], offset)
         
         # Apply smoothing
-        smoothed = SpikeSmoothing.smooth_spikes(offset_spike_data, framerate, window_ms=500)
+        smoothed = smooth_spikes(offset_spike_data, framerate, window_ms=500)
         
         # Filter trials
         filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_trial_filtering(
@@ -499,7 +507,7 @@ def create_simple_before_after_comparison(twop_dict, vr_dict, cell_idx, framerat
         )
         
         # Apply spatial smoothing
-        smoothed_spatial_activity = SpikeSmoothing.spatial_smooth(spatial_activity, window_cm=5)
+        smoothed_spatial_activity = spatial_smooth(spatial_activity, window_cm=5)
         
         # Get data for this specific cell
         cell_data = smoothed_spatial_activity[cell_idx]  # Shape: (n_trials, n_bins)
@@ -663,8 +671,8 @@ def find_best_example_cells(twop_dict, vr_dict, framerate, optimal_offset=6, n_c
         try:
             # Quick processing for both offsets
             def quick_process(offset):
-                offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], offset)
-                smoothed = SpikeSmoothing.smooth_spikes(offset_spike_data, framerate, window_ms=500)
+                offset_spike_data = apply_temporal_offset(twop_dict['sps'], offset)
+                smoothed = smooth_spikes(offset_spike_data, framerate, window_ms=500)
                 
                 filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_trial_filtering(
                     smoothed, vr_dict['interp_location'], 
@@ -683,7 +691,7 @@ def find_best_example_cells(twop_dict, vr_dict, framerate, optimal_offset=6, n_c
                     n_valid_laps, filtered_spks_laps, filtered_location_laps, single_lap_treadmill
                 )
                 
-                smoothed_spatial_activity = SpikeSmoothing.spatial_smooth(spatial_activity, window_cm=5)
+                smoothed_spatial_activity = spatial_smooth(spatial_activity, window_cm=5)
                 trial_avg = np.mean(smoothed_spatial_activity[cell_idx], axis=0)
                 
                 # Calculate sparsity
@@ -769,8 +777,8 @@ def create_multiple_examples_split(twop_dict, vr_dict, framerate, optimal_offset
             
             # Process data for both offsets
             def process_for_plot(offset):
-                offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], offset)
-                smoothed = SpikeSmoothing.smooth_spikes(offset_spike_data, framerate, window_ms=500)
+                offset_spike_data = apply_temporal_offset(twop_dict['sps'], offset)
+                smoothed = smooth_spikes(offset_spike_data, framerate, window_ms=500)
                 
                 filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_trial_filtering(
                     smoothed, vr_dict['interp_location'],
@@ -786,7 +794,7 @@ def create_multiple_examples_split(twop_dict, vr_dict, framerate, optimal_offset
                     n_valid_laps, filtered_spks_laps, filtered_location_laps, single_lap_treadmill
                 )
                 
-                smoothed_spatial_activity = SpikeSmoothing.spatial_smooth(spatial_activity, window_cm=5)
+                smoothed_spatial_activity = spatial_smooth(spatial_activity, window_cm=5)
                 trial_avg = np.mean(smoothed_spatial_activity[cell_idx], axis=0)
                 
                 return trial_avg, bin_centers

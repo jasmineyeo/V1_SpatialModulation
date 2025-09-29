@@ -123,6 +123,36 @@ def write_h5(filename, dic):
 
         recursively_save_dict_contents_to_group(h5file, '/', dic)
 
+def read_h5(filename, aslist=False):
+    """ Read an .h5 file in as a dictionary.
+
+    Modified from https://codereview.stackexchange.com/a/121308
+
+    Parameters
+    ----------
+    filename : str
+        Path to the .h5 file.
+    aslist : bool
+        If True, the dictionary will be read in as a list (on the first
+        layer). Keys must have been convertable to integers when the file
+        was written.
+    """
+    
+    with h5py.File(filename, 'r') as h5file:
+
+        out = recursively_load_dict_contents_from_group(h5file, '/')
+
+        if aslist:
+
+            outl = [None for l in range(len(out.keys()))]
+
+            for key, item in out.items():
+                outl[int(key)] = item
+            out = outl
+
+
+        return out
+    
 def recursively_save_dict_contents_to_group(h5file, path, dic):
 
     if isinstance(dic,dict):

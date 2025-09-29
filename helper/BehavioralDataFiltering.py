@@ -168,12 +168,14 @@ def process_data_with_speed_filtering(spks, location,
                                     max_trial_duration_seconds=30, 
                                     framerate=10, 
                                     min_speed_cm_s=2.0,
-                                    frames_to_keep=5):
+                                    frames_to_keep=5,
+                                    max_location_range_au=400):
     """
     Process 2P and VR data with improved speed-based filtering:
     1. Split data into trials/laps
     2. Filter out trials that take too long or too short
-    3. Remove periods with speed below threshold (stationary periods)
+    3. Filter out trials with location range > max_location_range_au
+    4. Remove periods with speed below threshold (stationary periods)
     
     Parameters:
     -----------
@@ -191,6 +193,8 @@ def process_data_with_speed_filtering(spks, location,
         Minimum speed threshold in cm/s (remove periods below this)
     frames_to_keep : int
         Number of frames to keep at the beginning and end of removed periods
+    max_location_range_au : float
+        Maximum allowed location range in AU (trials with larger range are excluded)
         
     Returns:
     --------
@@ -210,29 +214,40 @@ def process_data_with_speed_filtering(spks, location,
     print(f"Speed range: {np.min(speed_cm_s):.2f} to {np.max(speed_cm_s):.2f} cm/s")
     
     # Step 2: Reshape data into laps using original location (AU) for lap detection
-    spks_laps, location_laps, n_laps = reshape_into_laps(spks, location, plot_detection=True)
+    spks_laps, location_laps, n_laps = reshape_into_laps(spks, location, plot_detection=False)
     print("Number of detected laps:", n_laps)
     
     if n_laps == 0:
         print("No laps detected!")
         return None, None, 0
     
-    # Step 3: Filter out trials by duration
+    # Step 3: Filter out trials by duration and location range
     min_frames_per_trial = min_trial_duration_seconds * framerate
     max_frames_per_trial = max_trial_duration_seconds * framerate
     valid_trials = []
     
-    print(f"\nFiltering trials by duration ({min_trial_duration_seconds}s to {max_trial_duration_seconds}s):")
+    print(f"\nFiltering trials by duration ({min_trial_duration_seconds}s to {max_trial_duration_seconds}s) and location range (max {max_location_range_au} AU):")
     for i, (lap_spks, lap_loc) in enumerate(zip(spks_laps, location_laps)):
         trial_duration_frames = lap_spks.shape[1]
         trial_duration_seconds = trial_duration_frames / framerate
         
-        if min_frames_per_trial <= trial_duration_frames <= max_frames_per_trial:
+        # Calculate location range for this trial
+        location_range = np.max(lap_loc) - np.min(lap_loc)
+        
+        # Check both duration and location range criteria
+        duration_valid = min_frames_per_trial <= trial_duration_frames <= max_frames_per_trial
+        location_valid = location_range <= max_location_range_au
+        
+        if duration_valid and location_valid:
             valid_trials.append(i)
-            print(f"  Trial {i+1}: {trial_duration_seconds:.2f} seconds - VALID")
+            # print(f"  Trial {i+1}: {trial_duration_seconds:.2f}s, range {location_range:.1f} AU - VALID")
         else:
-            reason = "TOO SHORT" if trial_duration_frames < min_frames_per_trial else "TOO LONG"
-            print(f"  Trial {i+1}: {trial_duration_seconds:.2f} seconds - {reason} (skipping)")
+            reasons = []
+            if not duration_valid:
+                reasons.append("DURATION" + (" TOO SHORT" if trial_duration_frames < min_frames_per_trial else " TOO LONG"))
+            if not location_valid:
+                reasons.append(f"LOCATION RANGE TOO LARGE ({location_range:.1f} > {max_location_range_au} AU)")
+            # print(f"  Trial {i+1}: {trial_duration_seconds:.2f}s, range {location_range:.1f} AU - {', '.join(reasons)} (skipping)")
     
     # Step 4: For valid trials, remove low-speed periods
     filtered_spks_laps = []
@@ -287,7 +302,7 @@ def process_data_with_speed_filtering(spks, location,
     
     n_valid_laps = len(valid_trials)
     
-    print(f"\nFinal result: {n_valid_laps} valid laps after duration and speed filtering")
+    print(f"\nFinal result: {n_valid_laps} valid laps after duration, location range, and speed filtering")
     
     # Plot speed distribution for validation
     plot_speed_distribution(speed_cm_s, min_speed_cm_s)
@@ -340,12 +355,14 @@ def process_data_with_trial_filtering(spks, location,
                                       max_trial_duration_seconds=30, 
                                       framerate=10, 
                                       inactivity_threshold=1e-2, 
-                                      frames_to_keep=0):
+                                      frames_to_keep=0,
+                                      max_location_range_au=400):
     """
     Process 2P and VR data with improved filtering:
     1. Split data into trials/laps
-    2. Filter out trials that take too long
-    3. Remove inactive periods within valid trials
+    2. Filter out trials that take too long or too short
+    3. Filter out trials with location range > max_location_range_au
+    4. Remove inactive periods within valid trials
     
     Parameters:
     -----------
@@ -353,6 +370,8 @@ def process_data_with_trial_filtering(spks, location,
         Spike data (cells x time)
     location : numpy.ndarray
         Location data (time,)
+    min_trial_duration_seconds : float
+        Minimum duration for a valid trial in seconds
     max_trial_duration_seconds : float
         Maximum duration for a valid trial in seconds
     framerate : float
@@ -361,6 +380,8 @@ def process_data_with_trial_filtering(spks, location,
         Threshold for detecting inactivity in location data
     frames_to_keep : int
         Number of frames to keep at the beginning and end of inactive periods
+    max_location_range_au : float
+        Maximum allowed location range in AU (trials with larger range are excluded)
         
     Returns:
     --------
@@ -380,23 +401,33 @@ def process_data_with_trial_filtering(spks, location,
         print("No laps detected!")
         return None, None, 0
     
-    # Step 2: Filter out trials that take too long
-    
+    # Step 2: Filter out trials by duration and location range
     min_frames_per_trial = min_trial_duration_seconds * framerate
     max_frames_per_trial = max_trial_duration_seconds * framerate
     valid_trials = []
     
-    print("\nFiltering trials by duration:")
+    print(f"\nFiltering trials by duration ({min_trial_duration_seconds}s to {max_trial_duration_seconds}s) and location range (max {max_location_range_au} AU):")
     for i, (lap_spks, lap_loc) in enumerate(zip(spks_laps, location_laps)):
         trial_duration_frames = lap_spks.shape[1]
         trial_duration_seconds = trial_duration_frames / framerate
         
-        # if trial_duration_frames <= max_frames_per_trial:
-        if min_frames_per_trial <= trial_duration_frames <= max_frames_per_trial:
+        # Calculate location range for this trial
+        location_range = np.max(lap_loc) - np.min(lap_loc)
+        
+        # Check both duration and location range criteria
+        duration_valid = min_frames_per_trial <= trial_duration_frames <= max_frames_per_trial
+        location_valid = location_range <= max_location_range_au
+        
+        if duration_valid and location_valid:
             valid_trials.append(i)
-            # print(f"  Trial {i+1}: {trial_duration_seconds:.2f} seconds - VALID")
-        # else:
-            # print(f"  Trial {i+1}: {trial_duration_seconds:.2f} seconds - TOO LONG (skipping)")
+            # print(f"  Trial {i+1}: {trial_duration_seconds:.2f}s, range {location_range:.1f} AU - VALID")
+        else:
+            reasons = []
+            if not duration_valid:
+                reasons.append("DURATION" + (" TOO SHORT" if trial_duration_frames < min_frames_per_trial else " TOO LONG"))
+            if not location_valid:
+                reasons.append(f"LOCATION RANGE TOO LARGE ({location_range:.1f} > {max_location_range_au} AU)")
+            # print(f"  Trial {i+1}: {trial_duration_seconds:.2f}s, range {location_range:.1f} AU - {', '.join(reasons)} (skipping)")
     
     # Step 3: For valid trials, remove inactive periods
     filtered_spks_laps = []
@@ -438,11 +469,6 @@ def process_data_with_trial_filtering(spks, location,
     
     n_valid_laps = len(valid_trials)
     
-    # print(f"\nRetained {n_valid_laps} valid laps after filtering")
-    # for i, lap_idx in enumerate(valid_trials):
-    #     original_frames = len(location_laps[lap_idx])
-    #     filtered_frames = len(filtered_location_laps[i])
-    #     # print(f"  Lap {lap_idx+1}: {filtered_frames}/{original_frames} frames kept" + 
-    #     #       f" ({filtered_frames/original_frames*100:.1f}%)")
+    print(f"\nRetained {n_valid_laps} valid laps after duration, location range, and inactivity filtering")
     
     return filtered_spks_laps, filtered_location_laps, n_valid_laps
