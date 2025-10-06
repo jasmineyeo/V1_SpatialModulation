@@ -1,10 +1,12 @@
 """
-SMICalculation_LayerSpecific.py
+SMICalculation_LayerSpecific_CombinedTrialsWithinSession_FORJSY044.py
 A script for calculating the Spatial Modulation Index (SMI) for specific layers in the mouse primary visual cortex
-Input: 2p and VR data processed using preprocess.py
+(for all sessions for JSY044, max number of trials for VR was 60, so there are multiple trials within a session)
+Input: 2p (co-registered using suite2p, deconcat using CombiningMultipleTrialsWithinSession.py, preprocessed using preprocess.py
+        and then concat using CombiningMultipleTrialsWithinSession.py) and VR data processed using preprocess.py
 Output: SMI values for each layer
 
-JSY, 09/02/25
+JSY, 10/04/25
 """
 import sys
 sys.path.insert(0, r"C:\Users\jasmineyeo\Documents\GitHub\V1_SpatialModulation")
@@ -18,28 +20,10 @@ from helper import files, TwoP
 from helper import SpatialModulationIndex as SMI, ResponseVisualization as RV
 from helper.SpatialModulationIndexLayerSpecific import SpatialModulationIndexLayerSpecific as SMI_Layer
 
-# data_filepath = r"F:\2P\spmod\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1\TSeries-09062025-1308-001"
-# data_filepath = r"F:\2P\spmod\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2\TSeries-09072025-1257-002"
-# data_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3\TSeries-09082025-1540-001'
 data_filepath = r"F:\2P\spmod\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_togetherregistration"
-
-# data_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250909_JSY_JSY044_SpatialModulation_Day4\TSeries-09092025-1256-001'
-# data_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250910_JSY_JSY044_SpatialModulation_Day5\TSeries-09102025-1340-001'
-# data_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250911_JSY_JSY044_SpatialModulation_Day6\TSeries-09112025-1414-001'
-# data_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250912_JSY_JSY044_SpatialModulation_Day7\TSeries-09122025-1334-001'
-
-# # day 1
-# data_filepath = r"F:\2P\spmod\JSY044_ChronicImaging\250811_JSY_JSY044_SpatialModulation_Day1\TSeries-08112025-1505-001"
-
-# # day 3
-# data_filepath = r"F:\2P\spmod\JSY044_ChronicImaging\250813_JSY_JSY044_SpatialModulation_Day3\TSeries-08132025-1456-001"
-
-# day 5
-# data_filepath = r"F:\2P\spmod\JSY044_ChronicImaging\250815_JSY_JSY044_SpatialModulation_Day5\TSeries-08152025-1527-002"
 
 # Find files ending with preproc.h5
 preproc_files = glob.glob(os.path.join(data_filepath, "*.h5"))
-# preproc_files = glob.glob(os.path.join(data_filepath, "*preproc.h5"))
 
 if preproc_files:
     # Use the first preproc.h5 file found
@@ -53,13 +37,14 @@ if preproc_files:
 else:
     print("No files ending with 'preproc.h5' found in the directory")
 
+spatial_activity = preproc_data['spatial_activity']
 normalized_spatial_activity = preproc_data['norm_spatial_activity']
-trial_averaged_activity = np.mean(normalized_spatial_activity, axis=1)
 bin_centers = preproc_data['bin_centers']
-# reliable_cells = preproc_data['reliable_cells']
-reliable_cells = preproc_data['combined_reliable']
+reliable_cells = preproc_data['session_reliable_cells']
+combined_reliable_cells = preproc_data['session_combined_reliable']
 
-RV.create_response_plot(normalized_spatial_activity,reliable_cells)
+# RV.create_response_plot(normalized_spatial_activity,combined_reliable_cells)
+RV.create_response_plot(spatial_activity,reliable_cells)
 
 # Step 1: Shift to start at 0
 shifted_centers = bin_centers - np.min(bin_centers)
@@ -70,11 +55,12 @@ unity_corridor_length = np.max(shifted_centers)
 scaled_bin_centers = shifted_centers * (actual_corridor_length / unity_corridor_length)
 
 results = SMI.analyze_spatial_modulation_improved(
-    spatial_activity=normalized_spatial_activity,
+    spatial_activity=spatial_activity,
+    # spatial_activity=normalized_spatial_activity,
     bin_centers=scaled_bin_centers,
     reliable_cells=reliable_cells,
     segment_distance=28,
-    exclude_start_cm=22,  # 15cm from beginning
+    exclude_start_cm=15,  # 15cm from beginning
     exclude_end_cm=8,     # 7cm from end
     smoothing_sigma=1.0
 )
