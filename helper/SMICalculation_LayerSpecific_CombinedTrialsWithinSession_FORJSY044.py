@@ -1,12 +1,13 @@
 """
 SMICalculation_LayerSpecific_CombinedTrialsWithinSession_FORJSY044.py
 A script for calculating the Spatial Modulation Index (SMI) for specific layers in the mouse primary visual cortex
-(for all sessions for JSY044, max number of trials for VR was 60, so there are multiple trials within a session)
-Input: 2p (co-registered using suite2p, deconcat using CombiningMultipleTrialsWithinSession.py, preprocessed using preprocess.py
-        and then concat using CombiningMultipleTrialsWithinSession.py) and VR data processed using preprocess.py
-Output: SMI values for each layer
+with filtering for onset responses (cells that peak at the beginning of the corridor).
+
+Input: Combined session data from CombiningMultipleTrialsWithinSession.py
+Output: SMI values for each layer, excluding onset response cells, split into 30-lap chunks
 
 JSY, 10/04/25
+Modified to exclude onset responses and split data into 30-lap chunks
 """
 import sys
 sys.path.insert(0, r"C:\Users\jasmineyeo\Documents\GitHub\V1_SpatialModulation")
@@ -20,251 +21,425 @@ from helper import files, TwoP
 from helper import SpatialModulationIndex as SMI, ResponseVisualization as RV
 from helper.SpatialModulationIndexLayerSpecific import SpatialModulationIndexLayerSpecific as SMI_Layer
 
-data_filepath = r"F:\2P\spmod\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_togetherregistration"
 
-# Find files ending with preproc.h5
-preproc_files = glob.glob(os.path.join(data_filepath, "*.h5"))
-
-if preproc_files:
-    # Use the first preproc.h5 file found
-    preproc_file = preproc_files[0]
-    print(f"Found preprocessed file: {os.path.basename(preproc_file)}")
+def filter_onset_response_cells(spatial_activity, bin_centers, 
+                                onset_threshold_cm=15, 
+                                reliable_cells=None,
+                                verbose=True):
+    """
+    Identify and filter out cells that have their peak response in the onset region.
+    """
+    n_cells = spatial_activity.shape[0]
     
-    # Load it
-    preproc_data = files.read_h5(preproc_file)
-    print("Successfully loaded preprocessed data!")
+    non_onset_cells = np.ones(n_cells, dtype=bool)
+    onset_cells = np.zeros(n_cells, dtype=bool)
+    peak_positions = np.zeros(n_cells)
     
-else:
-    print("No files ending with 'preproc.h5' found in the directory")
-
-spatial_activity = preproc_data['spatial_activity']
-normalized_spatial_activity = preproc_data['norm_spatial_activity']
-bin_centers = preproc_data['bin_centers']
-reliable_cells = preproc_data['session_reliable_cells']
-combined_reliable_cells = preproc_data['session_combined_reliable']
-
-# RV.create_response_plot(normalized_spatial_activity,combined_reliable_cells)
-RV.create_response_plot(spatial_activity,reliable_cells)
-
-# Step 1: Shift to start at 0
-shifted_centers = bin_centers - np.min(bin_centers)
-
-# Step 2: Scale to match the actual physical distance 
-actual_corridor_length = np.size(bin_centers)  # cm
-unity_corridor_length = np.max(shifted_centers)
-scaled_bin_centers = shifted_centers * (actual_corridor_length / unity_corridor_length)
-
-results = SMI.analyze_spatial_modulation_improved(
-    spatial_activity=spatial_activity,
-    # spatial_activity=normalized_spatial_activity,
-    bin_centers=scaled_bin_centers,
-    reliable_cells=reliable_cells,
-    segment_distance=28,
-    exclude_start_cm=15,  # 15cm from beginning
-    exclude_end_cm=8,     # 7cm from end
-    smoothing_sigma=1.0
-)
-
-# Extract the SMI values for valid cells
-SMI_values = results['smi_results']['SMI']
-reliable_valid_cells = results['smi_results']['reliable_valid_cells']
-reliable_valid_SMI = SMI_values[reliable_valid_cells]
-
-# Remove any NaN or Inf values if present
-reliable_valid_SMI = reliable_valid_SMI[~np.isnan(reliable_valid_SMI) & ~np.isinf(reliable_valid_SMI)]
-print("")
-print(f"Number of total cells: " f"{len(SMI_values)}" " and number of reliable and valid cells: " f"{len(reliable_valid_SMI)}")
-
-# Calculate summary statistics
-median_SMI = np.median(reliable_valid_SMI)
-mad_SMI = stats.median_abs_deviation(reliable_valid_SMI)
-print(f"Median SMI ± MAD: {median_SMI:.2f} ± {mad_SMI:.2f}")
-
-# Statistical test (Wilcoxon signed-rank test against 0)
-stat, p_value = stats.wilcoxon(reliable_valid_SMI)
-print(f"Wilcoxon test against SMI=0: p-value = {p_value:.2e}")
-
-# Create cumulative distribution plot with full SMI range (including negative values)
-plt.figure(figsize=(8, 6))
-x_sorted = np.sort(reliable_valid_SMI)  # Keep original SMI values (including negatives)
-# # remove all negative values from reliable_valid_SMI
-# reliable_valid_SMI = reliable_valid_SMI[reliable_valid_SMI >= 0]
-# x_sortefd = np.sort(reliable_valid_SMI)  # Keep original SMI values (exluding negatives)
-y_cumulative = np.arange(1, len(x_sorted) + 1) / len(x_sorted)
-
-plt.plot(x_sorted, y_cumulative, 'k-', linewidth=2)
-
-# Add reference lines
-plt.axvline(0, color='gray', linestyle='--', alpha=0.7)
-plt.axhline(0.5, color='gray', linestyle='--', alpha=0.7)
-
-plt.xlabel('Spatial modulation index')
-plt.ylabel('Cumul. probability')
-plt.title('Cumulative Distribution of Spatial Modulation Index')
-plt.xlim(-1, 1)
-plt.ylim(0, 1)
-plt.grid(False)
-plt.tight_layout()
-plt.show()
-
-# Print proportion of cells with different modulation patterns
-prop_positive = np.mean(reliable_valid_SMI > 0)
-prop_negative = np.mean(reliable_valid_SMI < 0)
-prop_strong_pos = np.mean(reliable_valid_SMI > 0.5)
-print(f"Proportion of cells with positive modulation (SMI > 0): {prop_positive:.2f} ({prop_positive*100:.1f}%)")
-print(f"Proportion of cells with negative modulation (SMI < 0): {prop_negative:.2f} ({prop_negative*100:.1f}%)")
-print(f"Proportion of cells with strong positive modulation (SMI > 0.5): {prop_strong_pos:.2f} ({prop_strong_pos*100:.1f}%)")
-
-print("entering the layer-specific analysis..")
-
-# Layer-specific analysis
-# filepath = r"F:\2P\spmod\250811_JSY_JSY044_SpatialModulation_Day1\TSeries-08112025-1505-001"
-# twoP_filename should be a string after the last dash in data_filepath
-twoP_filename = data_filepath.split('\\')[-1]
-
-twoP_data = {}
-raw_twop_data = TwoP(data_filepath, twoP_filename)
-raw_twop_data.find_files()
-twop_dict = raw_twop_data.calc_dFF()
-
-twoP_data['stat'] = twop_dict['stat'].copy()
-twoP_data['ops'] = twop_dict['ops'].copy()
-
-numCells = len(twoP_data['stat'])
-
-im = np.zeros((twoP_data['ops']['Ly'], twoP_data['ops']['Lx']))  # Create an empty image
-for n in range(0, numCells):
-    ypix = twoP_data['stat'][n]['ypix'][~twoP_data['stat'][n]['overlap']]
-    xpix = twoP_data['stat'][n]['xpix'][~twoP_data['stat'][n]['overlap']]
-    im[ypix, xpix] = xpix  # Assign xpix values to im for progressive color change along x-axis
-
-# Extract the median coordinates of each cell
-med_coords = np.array([cell['med'] for cell in twoP_data['stat']])
-layer_cells, layer_boundaries = SMI_Layer.identify_layers(med_coords)
-SMI_Layer.plot_layer_distribution(med_coords, layer_cells, reliable_cells,im)
-plt.show()
-print("extracted the median coordinates..")
-
-layer_results, layer_cells = SMI_Layer.run_layer_SMI_analysis(
-    smi_results=results['smi_results'],
-    reliable_cells=reliable_valid_cells,
-    med_coords=med_coords,
-    layer_cells=layer_cells,
-    normalized_spatial_activity=normalized_spatial_activity,
-    bin_centers=scaled_bin_centers
-
-)
-print(bin_centers)
+    onset_bins = bin_centers <= (np.min(bin_centers) + onset_threshold_cm)
     
-results = [None] * 2  # Initialize list with 4 None elements
-numTrials = np.shape(normalized_spatial_activity)[1]
-numTriQ = numTrials//2
-for i in range(2):
-    if i == 0:
-        new_normalized_spatial_activity = normalized_spatial_activity[:, 0:numTriQ, :]
-    else:
-        new_normalized_spatial_activity = normalized_spatial_activity[:, (i)*numTriQ:(i+1)*numTriQ, :]
-
-    RV.create_response_plot(new_normalized_spatial_activity,reliable_cells)
-    plt.show()
-    results[i] = SMI.analyze_spatial_modulation_improved(
-    spatial_activity=new_normalized_spatial_activity,
-    bin_centers=scaled_bin_centers,
-    reliable_cells=reliable_cells,
-    segment_distance=28,
-    exclude_start_cm=20,  # 15cm from beginning
-    exclude_end_cm=7,     # 7cm from end
-    smoothing_sigma=1.0
-)
-    # results[i] = SMI.analyze_spatial_modulation_BBBB(new_normalized_spatial_activity, scaled_bin_centers, preproc_data['combined_reliable'], avg_cc=preproc_data['avg_cc'], cohens_d=preproc_data['cohen_d'],
-    #                                 segment_distance=segment_distance, exclude_boundary_cm=exclude_boundary_cm)
-    print(f"Quarter {i} completed")
-    plt.close('all')
+    cells_to_check = np.arange(n_cells)
+    if reliable_cells is not None:
+        cells_to_check = np.where(reliable_cells)[0]
+    
+    if verbose:
+        print(f"\nFiltering onset response cells:")
+        print(f"  Onset region: {np.min(bin_centers):.1f} to {np.min(bin_centers) + onset_threshold_cm:.1f} cm")
+        print(f"  Checking {len(cells_to_check)} cells...")
+    
+    for cell_idx in cells_to_check:
+        cell_avg = np.mean(spatial_activity[cell_idx], axis=0)
+        peak_bin_idx = np.argmax(cell_avg)
+        peak_positions[cell_idx] = bin_centers[peak_bin_idx]
         
-    # Extract the SMI values for valid cells
-    SMI_values = results[i]['smi_results']['SMI']
-    reliable_valid_cells = results[i]['smi_results']['reliable_valid_cells']
-    reliable_valid_SMI = SMI_values[reliable_valid_cells]
+        if onset_bins[peak_bin_idx]:
+            onset_cells[cell_idx] = True
+            non_onset_cells[cell_idx] = False
+    
+    n_onset = np.sum(onset_cells)
+    n_checked = len(cells_to_check)
+    
+    if verbose:
+        print(f"  Found {n_onset} onset response cells ({n_onset/n_checked*100:.1f}% of checked cells)")
+        print(f"  Retaining {np.sum(non_onset_cells & reliable_cells if reliable_cells is not None else non_onset_cells)} cells for analysis")
+    
+    return non_onset_cells, onset_cells, peak_positions
 
-    # Remove any NaN or Inf values if present
-    reliable_valid_SMI = reliable_valid_SMI[~np.isnan(reliable_valid_SMI) & ~np.isinf(reliable_valid_SMI)]
-    print("")
-    print(f"Number of total cells: " f"{len(SMI_values)}" " and number of reliable and valid cells: " f"{len(reliable_valid_SMI)}")
 
-    # Calculate summary statistics
-    median_SMI = np.median(reliable_valid_SMI)
-    mad_SMI = stats.median_abs_deviation(reliable_valid_SMI)
-    print(f"Median SMI ± MAD: {median_SMI:.2f} ± {mad_SMI:.2f}")
-
-    # Statistical test (Wilcoxon signed-rank test against 0)
-    stat, p_value = stats.wilcoxon(reliable_valid_SMI)
-    print(f"Wilcoxon test against SMI=0: p-value = {p_value:.2e}")
-
-    # Create cumulative distribution plot with full SMI range (including negative values)
-    plt.figure(figsize=(8, 6))
-    x_sorted = np.sort(reliable_valid_SMI)  # Keep original SMI values (including negatives)
-    # # remove all negative values from reliable_valid_SMI
-    # reliable_valid_SMI = reliable_valid_SMI[reliable_valid_SMI >= 0]
-    # x_sortefd = np.sort(reliable_valid_SMI)  # Keep original SMI values (exluding negatives)
-    y_cumulative = np.arange(1, len(x_sorted) + 1) / len(x_sorted)
-
-    plt.plot(x_sorted, y_cumulative, 'k-', linewidth=2)
-
-    # Add reference lines
-    plt.axvline(0, color='gray', linestyle='--', alpha=0.7)
-    plt.axhline(0.5, color='gray', linestyle='--', alpha=0.7)
-
-    plt.xlabel('Spatial modulation index')
-    plt.ylabel('Cumul. probability')
-    plt.title('Cumulative Distribution of Spatial Modulation Index')
-    plt.xlim(-1, 1)
-    plt.ylim(0, 1)
-    plt.grid(False)
+def visualize_onset_filtering(spatial_activity, reliable_cells, 
+                              non_onset_cells, onset_cells, 
+                              peak_positions, bin_centers,
+                              save_path=None):
+    """
+    Create visualization showing which cells were filtered as onset responses.
+    """
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    
+    # Helper function for creating sorted response plots
+    def create_sorted_response_plot(activity, cells_mask):
+        reliable_indices = np.where(cells_mask)[0]
+        reliable_activity = activity[reliable_indices]
+        n_trials = activity.shape[1]
+        odd_trials = np.arange(1, n_trials, 2)
+        odd_avg = np.mean(reliable_activity[:, odd_trials, :], axis=1)
+        
+        peak_locations = np.argmax(odd_avg, axis=1)
+        sorted_indices = np.argsort(peak_locations)
+        sorted_activity = odd_avg[sorted_indices]
+        
+        for i in range(len(sorted_activity)):
+            sorted_activity[i] = (sorted_activity[i] - np.min(sorted_activity[i])) / \
+                                 (np.max(sorted_activity[i]) - np.min(sorted_activity[i]))
+        
+        return sorted_activity
+    
+    # Plot 1: All reliable cells
+    sorted_all = create_sorted_response_plot(spatial_activity, reliable_cells)
+    im1 = axes[0, 0].imshow(sorted_all, aspect='auto', cmap='viridis', 
+                            interpolation='nearest', vmin=0, vmax=1)
+    axes[0, 0].set_title(f'All Reliable Cells\n{np.sum(reliable_cells)} cells', 
+                         fontsize=14, fontweight='bold')
+    axes[0, 0].set_xlabel('Spatial Bin')
+    axes[0, 0].set_ylabel('Cell Number (sorted by peak)')
+    plt.colorbar(im1, ax=axes[0, 0])
+    
+    # Plot 2: Filtered cells
+    filtered_cells = reliable_cells & non_onset_cells
+    sorted_filtered = create_sorted_response_plot(spatial_activity, filtered_cells)
+    im2 = axes[0, 1].imshow(sorted_filtered, aspect='auto', cmap='viridis', 
+                            interpolation='nearest', vmin=0, vmax=1)
+    axes[0, 1].set_title(f'After Onset Filtering\n{np.sum(filtered_cells)} cells', 
+                         fontsize=14, fontweight='bold')
+    axes[0, 1].set_xlabel('Spatial Bin')
+    axes[0, 1].set_ylabel('Cell Number (sorted by peak)')
+    plt.colorbar(im2, ax=axes[0, 1])
+    
+    # Plot 3: Peak position distribution
+    ax = axes[1, 0]
+    onset_peaks = peak_positions[reliable_cells & onset_cells]
+    non_onset_peaks = peak_positions[reliable_cells & non_onset_cells]
+    
+    ax.hist(non_onset_peaks, bins=30, alpha=0.7, color='blue', 
+           label=f'Spatial cells (n={len(non_onset_peaks)})')
+    ax.hist(onset_peaks, bins=30, alpha=0.7, color='red', 
+           label=f'Onset cells (n={len(onset_peaks)})')
+    ax.axvline(np.min(bin_centers) + 15, color='black', linestyle='--', 
+              linewidth=2, label='Onset threshold')
+    ax.set_xlabel('Peak Position (cm)', fontsize=12)
+    ax.set_ylabel('Number of Cells', fontsize=12)
+    ax.set_title('Distribution of Peak Positions', fontsize=14, fontweight='bold')
+    ax.legend()
+    ax.grid(True, alpha=0.3)
+    
+    # Plot 4: Summary
+    ax = axes[1, 1]
+    ax.axis('off')
+    
+    summary_text = "ONSET FILTERING SUMMARY\n\n"
+    summary_text += f"Original reliable cells: {np.sum(reliable_cells)}\n"
+    summary_text += f"Onset cells (removed): {np.sum(onset_cells & reliable_cells)}\n"
+    summary_text += f"Spatial cells (retained): {np.sum(filtered_cells)}\n\n"
+    
+    ax.text(0.1, 0.9, summary_text, transform=ax.transAxes, fontsize=12,
+           verticalalignment='top', fontfamily='monospace',
+           bbox=dict(boxstyle='round,pad=0.8', facecolor='lightblue', alpha=0.8))
+    
     plt.tight_layout()
-    plt.show()
+    
+    if save_path:
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')
+    
+    return fig
 
-    # Print proportion of cells with different modulation patterns
-    prop_positive = np.mean(reliable_valid_SMI > 0)
-    prop_negative = np.mean(reliable_valid_SMI < 0)
-    prop_strong_pos = np.mean(reliable_valid_SMI > 0.5)
-    print(f"Proportion of cells with positive modulation (SMI > 0): {prop_positive:.2f} ({prop_positive*100:.1f}%)")
-    print(f"Proportion of cells with negative modulation (SMI < 0): {prop_negative:.2f} ({prop_negative*100:.1f}%)")
-    print(f"Proportion of cells with strong positive modulation (SMI > 0.5): {prop_strong_pos:.2f} ({prop_strong_pos*100:.1f}%)")
 
-    print("entering the layer-specific analysis..")
+def split_data_into_chunks(spatial_activity, chunk_size=30):
+    """
+    Split spatial activity data into chunks of specified lap size.
+    """
+    n_cells, n_trials, n_bins = spatial_activity.shape
+    
+    chunks = []
+    chunk_indices = []
+    
+    n_chunks = n_trials // chunk_size
+    
+    for i in range(n_chunks):
+        start_idx = i * chunk_size
+        end_idx = (i + 1) * chunk_size
+        chunk = spatial_activity[:, start_idx:end_idx, :]
+        chunks.append(chunk)
+        chunk_indices.append((start_idx, end_idx))
+    
+    remaining_trials = n_trials % chunk_size
+    if remaining_trials > 0:
+        start_idx = n_chunks * chunk_size
+        chunk = spatial_activity[:, start_idx:, :]
+        chunks.append(chunk)
+        chunk_indices.append((start_idx, n_trials))
+        print(f"  Note: Last chunk has only {remaining_trials} trials")
+    
+    return chunks, chunk_indices
 
-    # Layer-specific analysis
+
+# =============================================================================
+# MAIN ANALYSIS SCRIPT
+# =============================================================================
+
+if __name__ == "__main__":
+    
+    # Configuration
+    # data_filepath = r"F:\2P\spmod\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1_togetherregistration"
+    # data_filepath = r"F:\2P\spmod\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2_togetherregistration"
+    data_filepath = r"F:\2P\spmod\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_togetherregistration"
+    
+    ONSET_THRESHOLD_CM = 15
+    APPLY_ONSET_FILTER = True
+    LAPS_PER_CHUNK = 20
+    
+    print("="*80)
+    print("SMI ANALYSIS WITH ONSET FILTERING & LAP-CHUNKING")
+    print("="*80)
+    print(f"Onset filtering: {'ENABLED' if APPLY_ONSET_FILTER else 'DISABLED'}")
+    if APPLY_ONSET_FILTER:
+        print(f"  Onset threshold: {ONSET_THRESHOLD_CM} cm")
+    print(f"Laps per chunk: {LAPS_PER_CHUNK}")
+    print("="*80 + "\n")
+    
+    # Load data
+    preproc_files = glob.glob(os.path.join(data_filepath, "*.h5"))
+    if preproc_files:
+        preproc_file = preproc_files[0]
+        print(f"Loading: {os.path.basename(preproc_file)}")
+        preproc_data = files.read_h5(preproc_file)
+        print("Successfully loaded!")
+    else:
+        raise ValueError("No .h5 files found")
+    
+    spatial_activity = preproc_data['spatial_activity']
+    normalized_spatial_activity = preproc_data['norm_spatial_activity']
+    bin_centers = preproc_data['bin_centers']
+    reliable_cells = preproc_data['session_reliable_cells']
+    
+    n_cells, n_total_trials, n_bins = spatial_activity.shape
+    print(f"\nData: {n_cells} cells, {n_total_trials} trials, {n_bins} bins")
+    print(f"Reliable cells: {np.sum(reliable_cells)}")
+    
+    # Prepare bin centers
+    shifted_centers = bin_centers - np.min(bin_centers)
+    scaled_bin_centers = shifted_centers * (np.size(bin_centers) / np.max(shifted_centers))
+    
+    # Apply onset filtering
+    if APPLY_ONSET_FILTER:
+        print("\n" + "="*80)
+        print("APPLYING ONSET FILTER")
+        print("="*80)
+        
+        non_onset_cells, onset_cells, peak_positions = filter_onset_response_cells(
+            spatial_activity, scaled_bin_centers, ONSET_THRESHOLD_CM, reliable_cells, True
+        )
+        
+        analysis_reliable_cells = reliable_cells & non_onset_cells
+        
+        viz_path = os.path.join(data_filepath, 'onset_filtering_visualization.png')
+        visualize_onset_filtering(spatial_activity, reliable_cells, non_onset_cells, 
+                                  onset_cells, peak_positions, scaled_bin_centers, viz_path)
+        # plt.show()
+    else:
+        analysis_reliable_cells = reliable_cells
+    
+    # Full session analysis
+    print("\n" + "="*80)
+    print("FULL SESSION ANALYSIS")
+    print("="*80)
+    
+    RV.create_response_plot(spatial_activity, analysis_reliable_cells)
+    plt.savefig(os.path.join(data_filepath, 'response_full.png'), dpi=300, bbox_inches='tight')
+    # plt.show()
+    
+    results_full = SMI.analyze_spatial_modulation_improved(
+        spatial_activity, scaled_bin_centers, analysis_reliable_cells,
+        segment_distance=28, exclude_start_cm=15, exclude_end_cm=8, smoothing_sigma=1.0
+    )
+    
+    SMI_full = results_full['smi_results']['SMI']
+    valid_full = results_full['smi_results']['reliable_valid_cells']
+    SMI_full_clean = SMI_full[valid_full]
+    SMI_full_clean = SMI_full_clean[~np.isnan(SMI_full_clean) & ~np.isinf(SMI_full_clean)]
+    
+    print(f"Valid cells: {len(SMI_full_clean)}")
+    print(f"Median SMI: {np.median(SMI_full_clean):.2f} ± {stats.median_abs_deviation(SMI_full_clean):.2f}")
+    
+    # Layer analysis
+    print("\n" + "="*80)
+    print("LAYER ANALYSIS - FULL SESSION")
+    print("="*80)
+    
     twoP_filename = data_filepath.split('\\')[-1]
-    twoP_data = {}
     raw_twop_data = TwoP(data_filepath, twoP_filename)
     raw_twop_data.find_files()
     twop_dict = raw_twop_data.calc_dFF()
-
-    twoP_data['stat'] = twop_dict['stat'].copy()
-    twoP_data['ops'] = twop_dict['ops'].copy()
-
-    numCells = len(twoP_data['stat'])
-
-    im = np.zeros((twoP_data['ops']['Ly'], twoP_data['ops']['Lx']))  # Create an empty image
-    for n in range(0, numCells):
-        ypix = twoP_data['stat'][n]['ypix'][~twoP_data['stat'][n]['overlap']]
-        xpix = twoP_data['stat'][n]['xpix'][~twoP_data['stat'][n]['overlap']]
-        im[ypix, xpix] = xpix  # Assign xpix values to im for progressive color change along x-axis
-
-    # Extract the median coordinates of each cell
-    med_coords = np.array([cell['med'] for cell in twoP_data['stat']])
-    layer_cells, layer_boundaries = SMI_Layer.identify_layers(med_coords)
-    SMI_Layer.plot_layer_distribution(med_coords, layer_cells, reliable_cells,im)
-    plt.show()
-    print("extracted the median coordinates..")
-
-    layer_results, layer_cells = SMI_Layer.run_layer_SMI_analysis(
-        smi_results=results[i]['smi_results'],
-        reliable_cells=reliable_valid_cells,
-        med_coords=med_coords,
-        layer_cells=layer_cells,
-        normalized_spatial_activity=normalized_spatial_activity,
-        bin_centers=scaled_bin_centers
-
+    
+    numCells = len(twop_dict['stat'])
+    im = np.zeros((twop_dict['ops']['Ly'], twop_dict['ops']['Lx']))
+    for n in range(numCells):
+        ypix = twop_dict['stat'][n]['ypix'][~twop_dict['stat'][n]['overlap']]
+        xpix = twop_dict['stat'][n]['xpix'][~twop_dict['stat'][n]['overlap']]
+        im[ypix, xpix] = xpix
+    
+    med_coords = np.array([cell['med'] for cell in twop_dict['stat']])
+    layer_cells, _ = SMI_Layer.identify_layers(med_coords)
+    SMI_Layer.plot_layer_distribution(med_coords, layer_cells, analysis_reliable_cells, im)
+    plt.savefig(os.path.join(data_filepath, 'layers_full.png'), dpi=300, bbox_inches='tight')
+    # plt.show()
+    
+    layer_results_full, _ = SMI_Layer.run_layer_SMI_analysis(
+        results_full['smi_results'], valid_full, med_coords, layer_cells,
+        normalized_spatial_activity, scaled_bin_centers
     )
-    print(bin_centers)
+    
+    # Chunked analysis
+    print("\n" + "="*80)
+    print(f"CHUNKED ANALYSIS ({LAPS_PER_CHUNK} laps/chunk)")
+    print("="*80)
+    
+    spatial_chunks, chunk_indices = split_data_into_chunks(spatial_activity, LAPS_PER_CHUNK)
+    normalized_chunks, _ = split_data_into_chunks(normalized_spatial_activity, LAPS_PER_CHUNK)
+    
+    n_chunks = len(spatial_chunks)
+    print(f"\n{n_total_trials} trials → {n_chunks} chunks")
+    for i, (start, end) in enumerate(chunk_indices):
+        print(f"  Chunk {i+1}: Trials {start+1}-{end} ({end-start} laps)")
+    
+    chunk_results = []
+    chunk_smi_values = []
+    
+    for chunk_idx, (chunk_spatial, chunk_normalized) in enumerate(zip(spatial_chunks, normalized_chunks)):
+        start_trial, end_trial = chunk_indices[chunk_idx]
+        
+        print(f"\n{'='*80}")
+        print(f"CHUNK {chunk_idx+1}/{n_chunks} (Trials {start_trial+1}-{end_trial})")
+        print(f"{'='*80}")
+        
+        if APPLY_ONSET_FILTER:
+            non_onset_chunk, _, _ = filter_onset_response_cells(
+                chunk_spatial, scaled_bin_centers, ONSET_THRESHOLD_CM, reliable_cells, False
+            )
+            analysis_chunk = reliable_cells & non_onset_chunk
+        else:
+            analysis_chunk = reliable_cells
+        
+        RV.create_response_plot(chunk_spatial, analysis_chunk)
+        plt.savefig(os.path.join(data_filepath, f'response_chunk{chunk_idx+1}.png'), dpi=300, bbox_inches='tight')
+        # plt.show()
+        
+        results_chunk = SMI.analyze_spatial_modulation_improved(
+            chunk_spatial, scaled_bin_centers, analysis_chunk,
+            segment_distance=28, exclude_start_cm=15, exclude_end_cm=8, smoothing_sigma=1.0
+        )
+        
+        chunk_results.append(results_chunk)
+        
+        SMI_chunk = results_chunk['smi_results']['SMI']
+        valid_chunk = results_chunk['smi_results']['reliable_valid_cells']
+        SMI_chunk_clean = SMI_chunk[valid_chunk]
+        SMI_chunk_clean = SMI_chunk_clean[~np.isnan(SMI_chunk_clean) & ~np.isinf(SMI_chunk_clean)]
+        
+        chunk_smi_values.append(SMI_chunk_clean)
+        
+        print(f"  Valid cells: {len(SMI_chunk_clean)}")
+        print(f"  Median SMI: {np.median(SMI_chunk_clean):.2f} ± {stats.median_abs_deviation(SMI_chunk_clean):.2f}")
+        if len(SMI_chunk_clean) > 0:
+            print(f"  Positive: {np.mean(SMI_chunk_clean > 0)*100:.1f}%")
+        
+        plt.figure(figsize=(8, 6))
+        x = np.sort(SMI_chunk_clean)
+        y = np.arange(1, len(x) + 1) / len(x)
+        plt.plot(x, y, 'k-', linewidth=2)
+        plt.axvline(0, color='gray', linestyle='--', alpha=0.7)
+        plt.xlabel('SMI')
+        plt.ylabel('Cumulative Probability')
+        plt.title(f'Chunk {chunk_idx+1} (Trials {start_trial+1}-{end_trial})')
+        plt.xlim(-1, 1)
+        plt.ylim(0, 1)
+        plt.tight_layout()
+        plt.savefig(os.path.join(data_filepath, f'SMI_chunk{chunk_idx+1}.png'), dpi=300, bbox_inches='tight')
+        # plt.show()
+        
+        layer_results_chunk, _ = SMI_Layer.run_layer_SMI_analysis(
+            results_chunk['smi_results'], valid_chunk, med_coords, layer_cells,
+            chunk_normalized, scaled_bin_centers, save_path=os.path.join(data_filepath, f'layers_chunk{chunk_idx+1}.png')
+        )
+        
+        plt.close('all')
+    
+    # Comparison
+    print("\n" + "="*80)
+    print("CHUNK COMPARISON")
+    print("="*80)
+    
+    fig, axes = plt.subplots(2, 2, figsize=(16, 12))
+    
+    # Median SMI
+    chunk_medians = [np.median(smi) for smi in chunk_smi_values]
+    chunk_mads = [stats.median_abs_deviation(smi) for smi in chunk_smi_values]
+    x_pos = np.arange(1, n_chunks + 1)
+    
+    axes[0, 0].errorbar(x_pos, chunk_medians, yerr=chunk_mads, fmt='o-', linewidth=2, markersize=8, capsize=5)
+    axes[0, 0].axhline(np.median(SMI_full_clean), color='red', linestyle='--', 
+                       label=f'Full ({np.median(SMI_full_clean):.2f})')
+    axes[0, 0].set_xlabel('Chunk')
+    axes[0, 0].set_ylabel('Median SMI ± MAD')
+    axes[0, 0].set_title('Median SMI Across Chunks')
+    axes[0, 0].legend()
+    axes[0, 0].grid(True, alpha=0.3)
+    axes[0, 0].set_xticks(x_pos)
+    
+    # Valid cells
+    n_valid = [len(smi) for smi in chunk_smi_values]
+    axes[0, 1].bar(x_pos, n_valid, alpha=0.7, color='steelblue')
+    axes[0, 1].axhline(len(SMI_full_clean), color='red', linestyle='--', 
+                       label=f'Full ({len(SMI_full_clean)})')
+    axes[0, 1].set_xlabel('Chunk')
+    axes[0, 1].set_ylabel('Valid Cells')
+    axes[0, 1].set_title('Valid Cells Per Chunk')
+    axes[0, 1].legend()
+    axes[0, 1].grid(True, alpha=0.3, axis='y')
+    axes[0, 1].set_xticks(x_pos)
+    
+    # Distributions
+    colors = plt.cm.viridis(np.linspace(0, 1, n_chunks))
+    for i, (smi, color) in enumerate(zip(chunk_smi_values, colors)):
+        x = np.sort(smi)
+        y = np.arange(1, len(x) + 1) / len(x)
+        axes[1, 0].plot(x, y, color=color, linewidth=2, label=f'Ch{i+1}', alpha=0.7)
+    
+    x_full = np.sort(SMI_full_clean)
+    y_full = np.arange(1, len(x_full) + 1) / len(x_full)
+    axes[1, 0].plot(x_full, y_full, 'k-', linewidth=3, label='Full', alpha=0.9)
+    axes[1, 0].axvline(0, color='gray', linestyle='--', alpha=0.5)
+    axes[1, 0].set_xlabel('SMI')
+    axes[1, 0].set_ylabel('Cumulative Probability')
+    axes[1, 0].set_title('SMI Distributions')
+    axes[1, 0].set_xlim(-1, 1)
+    axes[1, 0].set_ylim(0, 1)
+    axes[1, 0].legend(fontsize=8)
+    axes[1, 0].grid(True, alpha=0.3)
+    
+    # Summary
+    axes[1, 1].axis('off')
+    summary = f"SUMMARY\n\n{n_chunks} chunks × {LAPS_PER_CHUNK} laps\n\n"
+    for i, (med, mad) in enumerate(zip(chunk_medians, chunk_mads)):
+        summary += f"Chunk {i+1}: {med:.2f}±{mad:.2f}\n"
+    summary += f"\nFull: {np.median(SMI_full_clean):.2f}±{stats.median_abs_deviation(SMI_full_clean):.2f}"
+    
+    axes[1, 1].text(0.1, 0.9, summary, transform=axes[1, 1].transAxes, fontsize=10,
+                   verticalalignment='top', fontfamily='monospace',
+                   bbox=dict(boxstyle='round', facecolor='wheat', alpha=0.5))
+    
+    plt.tight_layout()
+    plt.savefig(os.path.join(data_filepath, 'chunk_comparison.png'), dpi=300, bbox_inches='tight')
+    # plt.show()
+    
+    print("\n" + "="*80)
+    print("ANALYSIS COMPLETE!")
+    print("="*80)
+    print(f"\nCheck outputs in: {data_filepath}")

@@ -150,10 +150,10 @@ def convert_ops_to_serializable(ops_data):
 
 def preprocess_2pVR(twop_filepath, vr_filepath):
 
-    if twop_filepath is None or vr_filepath is None:
-        # file paths for twop and behavioral data
-        twop_filepath = r'F:\2P\spmod\250811_JSY_JSY044_SpatialModulation_Day1\TSeries-08112025-1505-001'
-        vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_08112025_04-04-19.txt"
+    # if twop_filepath is None or vr_filepath is None:
+    #     # file paths for twop and behavioral data
+    #     twop_filepath = r'F:\2P\spmod\250811_JSY_JSY044_SpatialModulation_Day1\TSeries-08112025-1505-001'
+    #     vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_08112025_04-04-19.txt"
 
     # 1. Preprocess 2p data and treadmill behavior data (load and align)
     procData = dataLoader(twop_filepath, vr_filepath)
@@ -347,12 +347,24 @@ if __name__ == "__main__":
     # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1\TSeries-09062025-1308-002'
     # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09062025_02-09-47.txt"
 
+    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1_togetherregistration\TSeries-09062025-1308-001'
+    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09062025_01-50-45.txt"
+    
+    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1_togetherregistration\TSeries-09062025-1308-002'
+    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09062025_02-09-47.txt"
+
     # # day 2, 0907
     # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250907_JSY_JSY044_SpatialModulation_Day2\TSeries-09072025-1257-001'
     # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09072025_01-18-32.txt"
 
     # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2\TSeries-09072025-1257-002'
     # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09072025_01-39-00.txt"
+ 
+    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2_togetherregistration\TSeries-09072025-1257-001'
+    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09072025_01-18-32.txt"
+
+    twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2_togetherregistration\TSeries-09072025-1257-002'
+    vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09072025_01-39-00.txt"
     
     # # day 3, 0908
     # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_togetherregistration\TSeries-09082025-1540-001'
@@ -361,8 +373,8 @@ if __name__ == "__main__":
     # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_togetherregistration\TSeries-09082025-1540-002'
     # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09082025_04-14-19.txt"
 
-    twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_togetherregistration\TSeries-09082025-1540-003'
-    vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09082025_04-27-09.txt"
+    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_togetherregistration\TSeries-09082025-1540-003'
+    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09082025_04-27-09.txt"
     
     # # day 4, 0909
     # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250909_JSY_JSY044_SpatialModulation_Day4\TSeries-09092025-1256-001'

@@ -675,7 +675,7 @@ class SpatialModulationIndexLayerSpecific:
     
     @staticmethod
     def run_layer_SMI_analysis(smi_results, reliable_cells, med_coords, layer_cells,
-                                            normalized_spatial_activity=None, bin_centers=None):
+                                            normalized_spatial_activity=None, bin_centers=None, save_path=None):
         """
         Complete workflow for layer-specific SMI analysis using pre-calculated SMI values.
         
@@ -741,6 +741,7 @@ class SpatialModulationIndexLayerSpecific:
             layer_cells=layer_cells, 
             smi_values=all_smi, 
             reliable_cells=reliable_cells, 
+            save_path = save_path,
             fig_title="Layer-specific Spatial Modulation"
         )
         
