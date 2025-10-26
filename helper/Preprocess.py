@@ -164,27 +164,38 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
     optimal_offset, _, _ = SpikeSmoothing.run_offset_optimization(twop_filepath, vr_filepath)
 
     # Use the optimal offset in your main preprocessing
-    offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], optimal_offset)
-    # offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], 6)
+    # offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], optimal_offset)
+    offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], -6)
 
     # 2b. Smooth the deconvolved traces using a 250 ms Gaussian window
     smoothed = SpikeSmoothing.smooth_spikes(offset_spike_data, framerate, window_ms=250)
     twop_dict['smoothed_spks'] = smoothed
-
-    # 2c. Remove inactive data points
+    
+    # 2c. Remove inactive data points with CORRECTED speed calculation
+    print("\n" + "="*80)
+    print("FILTERING DATA WITH CORRECTED SPEED CALCULATION")
+    print("="*80)
+    
     min_trial_duration_seconds = 5
     max_trial_duration_seconds = 60
 
-    filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_speed_filtering(
-        smoothed, 
-        vr_dict['interp_location'],
-        min_trial_duration_seconds=min_trial_duration_seconds, 
-        max_trial_duration_seconds=max_trial_duration_seconds,
-        framerate=framerate,
-        min_speed_cm_s=2.0,
-        frames_to_keep=5
-    )
-
+    # FIXED: Returns speed_laps now!
+    filtered_spks_laps, filtered_location_laps, filtered_speed_laps, n_valid_laps = \
+        DF.process_data_with_speed_filtering(
+            smoothed, 
+            vr_dict['interp_location'],
+            min_trial_duration_seconds=min_trial_duration_seconds, 
+            max_trial_duration_seconds=max_trial_duration_seconds,
+            framerate=framerate,
+            min_speed_cm_s=2.0,
+            frames_to_keep=5,
+            max_location_range_au=400,
+            filter_backward_laps=True
+        )
+    
+    if n_valid_laps == 0:
+        raise ValueError("No valid laps after filtering!")
+    
     # 3. Spatial discretization
     single_revolution_VR = 282.415
     single_revolution_treadmill = 27.8
@@ -218,34 +229,72 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
 
     print(f"Found {np.sum(reliable_cells)} reliable cells out of {len(reliable_cells)}")
     print(f"Found {np.sum(combined_reliable)} combined_reliable cells out of {len(combined_reliable)}")
+    
+    
+    # ===== NEW: Prepare temporal data for speed tuning analysis =====
+    print("\n" + "="*80)
+    print("PREPARING TEMPORAL DATA FOR SPEED TUNING ANALYSIS")
+    print("="*80)
+    
+    # Concatenate all laps to get continuous temporal sequences
+    temporal_spikes = np.concatenate(filtered_spks_laps, axis=1)
+    temporal_location = np.concatenate(filtered_location_laps)
+    temporal_speed = np.concatenate(filtered_speed_laps)
+    
+    # Create lap boundaries for the temporal data
+    lap_starts = []
+    lap_ends = []
+    cumsum = 0
+    
+    for lap_speed in filtered_speed_laps:
+        lap_starts.append(cumsum)
+        cumsum += len(lap_speed)
+        lap_ends.append(cumsum)
+    
+    lap_starts = np.array(lap_starts)
+    lap_ends = np.array(lap_ends)
+    
+    print(f"\n✓ Temporal data prepared:")
+    print(f"  Spikes: {temporal_spikes.shape} (cells × frames)")
+    print(f"  Speed: {len(temporal_speed)} frames")
+    print(f"  Location: {len(temporal_location)} frames")
+    print(f"  Laps: {len(lap_starts)}")
+    print(f"  Frame range: 0 to {lap_ends[-1]}")
+    
+    # Verify dimensions match
+    assert temporal_spikes.shape[1] == len(temporal_speed), "Spike/speed dimension mismatch!"
+    assert len(temporal_speed) == len(temporal_location), "Speed/location dimension mismatch!"
+    assert lap_ends[-1] == len(temporal_speed), "Lap boundaries don't match data length!"
+    
+    print("\n✓ All dimensions verified!")
         
     # 5. Response Plot - plotting activity of all responsive cells
     combinedreliablecell_save_directory = os.path.join(twop_filepath, 'combined_reliable_cell_plots')
     reliablecell_save_directory = os.path.join(twop_filepath, 'reliable_cell_plots')
     
-    saved_files, stats = RT.save_all_reliable_cell_plots(
-        spatial_activity=normalized_spatial_activity,
-        reliable_cells=reliable_cells,
-        save_directory=reliablecell_save_directory,
-        avg_cc=avg_cc,
-        cohen_d=cohens_d,
-        bin_centers=bin_centers,
-        normalize=True,
-        file_format='png',
-        dpi=150
-    )
+    # saved_files, stats = RT.save_all_reliable_cell_plots(
+    #     spatial_activity=normalized_spatial_activity,
+    #     reliable_cells=reliable_cells,
+    #     save_directory=reliablecell_save_directory,
+    #     avg_cc=avg_cc,
+    #     cohen_d=cohens_d,
+    #     bin_centers=bin_centers,
+    #     normalize=True,
+    #     file_format='png',
+    #     dpi=150
+    # )
 
-    saved_files, stats = RT.save_all_reliable_cell_plots(
-        spatial_activity=normalized_spatial_activity,
-        reliable_cells=combined_reliable,
-        save_directory=combinedreliablecell_save_directory,
-        avg_cc=avg_cc,
-        cohen_d=cohens_d,
-        bin_centers=bin_centers,
-        normalize=True,
-        file_format='png',
-        dpi=150
-    )
+    # saved_files, stats = RT.save_all_reliable_cell_plots(
+    #     spatial_activity=normalized_spatial_activity,
+    #     reliable_cells=combined_reliable,
+    #     save_directory=combinedreliablecell_save_directory,
+    #     avg_cc=avg_cc,
+    #     cohen_d=cohens_d,
+    #     bin_centers=bin_centers,
+    #     normalize=True,
+    #     file_format='png',
+    #     dpi=150
+    # )
 
     fig1, _ = RV.create_response_plot(normalized_spatial_activity, reliable_cells, clim=(0, 1))
     fig1.savefig(os.path.join(combinedreliablecell_save_directory, 'reliable_cells.png'), dpi=150)
@@ -265,22 +314,32 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
 
     # UPDATED: Include all necessary data for dataset combination with HDF5-compatible types
     preprocessed_dict = {
+        # Spatial data (existing)
         'spatial_activity': smoothed_spatial_activity,
         'norm_spatial_activity': normalized_spatial_activity,
-        'reliable_cells': reliable_cells.astype(bool),  # Ensure boolean type
-        'combined_reliable': combined_reliable.astype(bool),  # Ensure boolean type
-        'avg_cc': avg_cc.astype(np.float64),  # Ensure float64
-        'cohen_d': cohens_d.astype(np.float64),  # Ensure float64
-        'bin_centers': bin_centers.astype(np.float64),  # Ensure float64
-        'med_coords': med_coords.astype(np.float64),  # NEW: median coordinates for cell matching
-        'stat_serializable': serializable_stat,  # NEW: serializable cell stat data
-        'ops_serializable': serializable_ops,    # NEW: serializable ops data
+        'reliable_cells': reliable_cells.astype(bool),
+        'combined_reliable': combined_reliable.astype(bool),
+        'avg_cc': avg_cc.astype(np.float64),
+        'cohen_d': cohens_d.astype(np.float64),
+        'bin_centers': bin_centers.astype(np.float64),
+        'med_coords': med_coords.astype(np.float64),
+        'stat_serializable': serializable_stat,
+        'ops_serializable': serializable_ops,
+        
+        # NEW: Temporal data for speed tuning analysis
+        'speed_cm_s': temporal_speed.astype(np.float64),
+        'smoothed_spks_temporal': temporal_spikes.astype(np.float64),
+        'location_cm': temporal_location.astype(np.float64),
+        'lap_starts': lap_starts.astype(np.int32),
+        'lap_ends': lap_ends.astype(np.int32),
+        
+        # Metadata
         'twop_filepath': str(twop_filepath),
         'vr_filepath': str(vr_filepath),
         'processing_timestamp': datetime.datetime.now().isoformat(),
-        'processing_params': {     # NEW: processing parameters for reference
+        'processing_params': {
             'framerate': float(framerate),
-            'optimal_offset': int(6),
+            'optimal_offset': int(optimal_offset),
             'window_cm': float(window_cm),
             'min_trial_duration_seconds': float(min_trial_duration_seconds),
             'max_trial_duration_seconds': float(max_trial_duration_seconds),
@@ -340,72 +399,14 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
     return preprocessed_dict
 
 if __name__ == "__main__":
-    # # day 1, 0906
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1\TSeries-09062025-1308-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09062025_01-50-45.txt"
-    
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1\TSeries-09062025-1308-002'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09062025_02-09-47.txt"
-
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1_togetherregistration\TSeries-09062025-1308-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09062025_01-50-45.txt"
-    
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1_togetherregistration\TSeries-09062025-1308-002'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09062025_02-09-47.txt"
-
-    # # day 2, 0907
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250907_JSY_JSY044_SpatialModulation_Day2\TSeries-09072025-1257-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09072025_01-18-32.txt"
-
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2\TSeries-09072025-1257-002'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09072025_01-39-00.txt"
- 
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2_togetherregistration\TSeries-09072025-1257-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09072025_01-18-32.txt"
-
-    twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2_togetherregistration\TSeries-09072025-1257-002'
-    vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09072025_01-39-00.txt"
-    
-    # # day 3, 0908
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_togetherregistration\TSeries-09082025-1540-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09082025_04-02-31.txt"
-    
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_togetherregistration\TSeries-09082025-1540-002'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09082025_04-14-19.txt"
-
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_togetherregistration\TSeries-09082025-1540-003'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09082025_04-27-09.txt"
-    
-    # # day 4, 0909
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250909_JSY_JSY044_SpatialModulation_Day4\TSeries-09092025-1256-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09092025_01-15-55.txt"
-    
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250909_JSY_JSY044_SpatialModulation_Day4\TSeries-09092025-1256-002'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09092025_01-29-34.txt"
-
-    # # # day 5, 0910
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250910_JSY_JSY044_SpatialModulation_Day5\TSeries-09102025-1340-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09102025_02-14-21.txt"
-    
-    
-    # # day 6, 0911
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250911_JSY_JSY044_SpatialModulation_Day6\TSeries-09112025-1414-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09112025_02-48-03.txt"
-    
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250911_JSY_JSY044_SpatialModulation_Day6\TSeries-09112025-1414-002'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09112025_03-10-04.txt"
-    
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250911_JSY_JSY044_SpatialModulation_Day6\TSeries-09112025-1414-003'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09112025_03-22-48.txt"
-    
-    # # # day 7, 0912
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250912_JSY_JSY044_SpatialModulation_Day7\TSeries-09122025-1334-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09122025_01-57-03.txt"
-    
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250912_JSY_JSY044_SpatialModulation_Day7\TSeries-09122025-1334-002'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09122025_02-11-23.txt"
-    
-    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250912_JSY_JSY044_SpatialModulation_Day7\TSeries-09122025-1334-003'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09122025_02-27-27.txt"
-
+    # twop_filepath = r'F:\2P\spmod\JSY052_ChrnoicImaging\251009_JSY_JSY052_SpatialModulation_Day1\TSeries-10092025-1542-002'
+    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_10092025_05-00-40.txt"
+    twop_filepath = r'F:\2P\spmod\JSY052_ChrnoicImaging\251010_JSY_JSY052_SpatialModulation_Day2\TSeries-10102025-0916-001'
+    vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_10102025_09-34-50.txt"
+    # twop_filepath = r'F:\2P\spmod\JSY052_ChrnoicImaging\251011_JSY_JSY052_SpatialModulation_Day3\TSeries-10112025-1441-002'
+    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_10112025_02-58-11.txt"
+    # twop_filepath = r'F:\2P\spmod\JSY052_ChrnoicImaging\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-001'
+    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_10122025_12-30-24.txt"
+    # twop_filepath = r'F:\2P\spmod\JSY052_ChrnoicImaging\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-002'
+    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_10122025_01-13-48.txt"
     preprocess_2pVR(twop_filepath, vr_filepath)

@@ -119,15 +119,32 @@ class dataLoader:
         
         return animal_id, date, framerate
 
-
     def align_data(self):
         # Align the twoP and VR data based on their timestamps
         twoP_data = self.twoP_data
         VR_data = self.VR_data
         
-        # Define absolute_t0 as the first element of VR_data['absoluteT'] -- with "s" for event type, which is the timestamp for 2p input trigger
-        VR_absolute_t = np.array([datetime.datetime.strptime(t, '%H.%M.%S.%f') for t in VR_data['absoluteT'][0:]])
-
+        # Get the date and hour from the first two-photon timestamp
+        reference_date = twoP_data['AbsoluteT'][0].date()
+        reference_hour = twoP_data['AbsoluteT'][0].hour
+        
+        # Parse VR timestamps with the correct date
+        VR_absolute_t = []
+        for t_str in VR_data['absoluteT']:
+            time_obj = datetime.datetime.strptime(t_str, '%H.%M.%S.%f').time()
+            dt = datetime.datetime.combine(reference_date, time_obj)
+            
+            # If the parsed hour is < 12 but we expect PM times (reference is >= 12), add 12 hours
+            # This handles cases where VR log stores "1" for 1 PM instead of "13"
+            if dt.hour < 12 and reference_hour >= 12:
+                dt = dt + datetime.timedelta(hours=12)
+            # If the parsed hour is >= 12 but we expect AM times (reference is < 12), subtract 12 hours
+            elif dt.hour >= 12 and reference_hour < 12:
+                dt = dt - datetime.timedelta(hours=12)
+            
+            VR_absolute_t.append(dt)
+        VR_absolute_t = np.array(VR_absolute_t)
+        
         # Calculate relative_t (time elapsed from absolute_t0)
         VR_relative_t = np.array([(t - VR_absolute_t[0]).total_seconds() for t in VR_absolute_t])
 
@@ -160,15 +177,83 @@ class dataLoader:
         print(f"size of interpolated_location is {interpolated_location.shape}")
         print(f"size of new_VR_data['location'] is {new_VR_data['location'].shape}")
 
-        # # Plot the interpolated location
-        # plt.figure(figsize=(20, 5))
-        # plt.plot(twoP_data['RelativeT'], new_VR_data['interp_location']+100, label="Interpolated Location", alpha=0.5)
-        # plt.plot(new_VR_data['RelativeT'], new_VR_data['location'], label="Original Location", alpha=0.5)
-        # plt.xlabel("Time (s)")
-        # plt.ylabel("Location (AU)")
-        # plt.legend()
-        # plt.show()
-
         self.new_VR_data = new_VR_data
 
         return twoP_data, new_VR_data
+
+    # def align_data(self):
+    #     # Align the twoP and VR data based on their timestamps
+    #     twoP_data = self.twoP_data
+    #     VR_data = self.VR_data
+        
+    #     # Get the date and hour from the first two-photon timestamp
+    #     reference_date = twoP_data['AbsoluteT'][0].date()
+    #     reference_hour = twoP_data['AbsoluteT'][0].hour
+        
+    #     # Parse VR timestamps with the correct date
+    #     VR_absolute_t = []
+    #     for t_str in VR_data['absoluteT']:
+    #         time_obj = datetime.datetime.strptime(t_str, '%H.%M.%S.%f').time()
+    #         dt = datetime.datetime.combine(reference_date, time_obj)
+            
+    #         # If the parsed hour suggests AM but 2P data suggests PM, add 12 hours
+    #         if dt.hour < 12 and reference_hour >= 12:
+    #             dt = dt + datetime.timedelta(hours=12)
+            
+    #         VR_absolute_t.append(dt)
+    #     VR_absolute_t = np.array(VR_absolute_t)
+        
+    #     # Calculate relative_t (time elapsed from absolute_t0)
+    #     VR_relative_t = np.array([(t - VR_absolute_t[0]).total_seconds() for t in VR_absolute_t])
+
+    #     # Add twoP_data['AbsoluteT'][0] to each timedelta object to get vrT
+    #     VR_relative_t_timedelta = np.array([datetime.timedelta(seconds=t) for t in VR_relative_t])
+    #     Aligned_Abs_vrT = twoP_data['AbsoluteT'][0] + VR_relative_t_timedelta
+
+    #     # # Define absolute_t0 as the first element of VR_data['absoluteT'] -- with "s" for event type, which is the timestamp for 2p input trigger
+    #     # VR_absolute_t = np.array([datetime.datetime.strptime(t, '%H.%M.%S.%f') for t in VR_data['absoluteT'][0:]])
+
+    #     # # Calculate relative_t (time elapsed from absolute_t0)
+    #     # VR_relative_t = np.array([(t - VR_absolute_t[0]).total_seconds() for t in VR_absolute_t])
+
+    #     # # Add twoP_data['AbsoluteT'][0] to each timedelta object to get vrT
+    #     # VR_relative_t_timedelta = np.array([datetime.timedelta(seconds=t) for t in VR_relative_t])
+    #     # Aligned_Abs_vrT = twoP_data['AbsoluteT'][0] + VR_relative_t_timedelta
+
+    #     # Find the closest value in Aligned_Abs_vrT that is greater than twoP_data['AbsoluteT'][-1]
+    #     closest_value = Aligned_Abs_vrT[Aligned_Abs_vrT > twoP_data['AbsoluteT'][-1]][0]
+    #     closest_index = np.where(Aligned_Abs_vrT == closest_value)[0][0]
+
+    #     new_VR_data = {}
+    #     new_VR_data['AbsoluteT'] = np.array(Aligned_Abs_vrT)[:closest_index]
+    #     new_VR_data['RelativeT'] = VR_relative_t[:closest_index]
+    #     new_VR_data['event'] = VR_data['event'][:closest_index]
+    #     new_VR_data['location'] = VR_data['location'][:closest_index]
+
+    #     # Calculate relative time points for VR_data and twoP_data
+    #     twop_relativeT = twoP_data['AbsoluteT'] - twoP_data['AbsoluteT'][0]
+
+    #     # Convert to seconds
+    #     twop_relativeT = np.array([t.total_seconds() for t in twop_relativeT])
+    #     twoP_data['RelativeT'] = twop_relativeT
+
+    #     # Interpolate the location at twoP_data['RelativeT'] from new_VR_data['location'] at new_VR_data['RelativeT']
+    #     interpolated_location = np.interp(twoP_data['RelativeT'], 
+    #                                     new_VR_data['RelativeT'], 
+    #                                     new_VR_data['location'])
+    #     new_VR_data['interp_location'] = interpolated_location
+    #     print(f"size of interpolated_location is {interpolated_location.shape}")
+    #     print(f"size of new_VR_data['location'] is {new_VR_data['location'].shape}")
+
+    #     # # Plot the interpolated location
+    #     # plt.figure(figsize=(20, 5))
+    #     # plt.plot(twoP_data['RelativeT'], new_VR_data['interp_location']+100, label="Interpolated Location", alpha=0.5)
+    #     # plt.plot(new_VR_data['RelativeT'], new_VR_data['location'], label="Original Location", alpha=0.5)
+    #     # plt.xlabel("Time (s)")
+    #     # plt.ylabel("Location (AU)")
+    #     # plt.legend()
+    #     # plt.show()
+
+    #     self.new_VR_data = new_VR_data
+
+    #     return twoP_data, new_VR_data

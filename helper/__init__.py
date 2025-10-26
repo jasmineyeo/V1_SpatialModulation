@@ -24,6 +24,10 @@ from .CombineDatasets import (
 from .twop import (
     TwoP)
 
+from .SpeedTuningAnalysis import(
+    SpeedTuningAnalysis
+)
+
 from .SpikeSmoothing import (
     calculate_sparsity_index,
     calculate_spatial_information,
@@ -46,10 +50,12 @@ from .SpikeSmoothing import (
 
 from .BehavioralDataFiltering import (
     calculate_vr_speed_and_distance,
+    calculate_vr_speed_and_distance_per_lap,
     reshape_into_laps, 
+    reshape_into_laps_teleportation_aware,
     process_data_with_speed_filtering,
-    plot_speed_distribution,
-    process_data_with_trial_filtering)
+    debug_speed_calculation,
+    plot_speed_distribution)
 
 from .SpatialDiscretization import (
     spatial_assignment,
@@ -118,11 +124,12 @@ __all__ = ["read_xml", "write_h5", "read_h5", "recursively_save_dict_contents_to
             "DatasetCombiner",
             "CellMatchingValidator",
            "TwoP",
+           "SpeedTuningAnalysis",
            "calculate_sparsity_index", "calculate_spatial_information", "calculate_peak_to_baseline_ratio", "apply_quality_filters", "calculate_sharpness_metrics_for_offset", "find_optimal_temporal_offset", "create_offset_comparison_plot", "run_offset_optimization",
            "create_simple_before_after_comparison", "find_best_example_cells", "create_multiple_examples_split", "create_five_detailed_examples", "demonstrate_simple_offset_effect",
            "apply_temporal_offset", "smooth_spikes", "plot_comparison", "plot_sample_cells", "spatial_smooth",
-           "calculate_vr_speed_and_distance", "reshape_into_laps", "process_data_with_speed_filtering",
-           "plot_speed_distribution", "process_data_with_trial_filtering",
+           "calculate_vr_speed_and_distance", "calculate_vr_speed_and_distance_per_lap", "filter_backward_running_laps", "reshape_into_laps", "reshape_into_laps_teleportation_aware", "process_data_with_speed_filtering",
+           "plot_speed_distribution", "debug_speed_calculation",
            "spatial_assignment", "spatial_assignment_with_physical_units",
            "test_cell_reliability", "test_cell_reliability_with_edge_visualization", "plot_edge_activity_distributions", "visualize_cell_edge_profiles", "normalize_spatial_activity", "plot_reliable_cells_side_by_side", "plot_reliable_cells_grid","plot_reliable_cells_waterfall", "evaluate_pattern_similarity", "combined_reliability_test", "combined_reliability_test_improved",
            "find_robust_peak",

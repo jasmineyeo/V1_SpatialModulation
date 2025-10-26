@@ -50,8 +50,8 @@ class SpatialModulationIndexLayerSpecific:
         
         # for regular objective, each pixel corresponds to 1 bin and 1 bin = 0.947408849697405 um. Find bins +/- 70um away from peak_density
         # for cousa, each pixel corresponds to 1 bin and 1 bin = 1.5076603 um. Find bins +/- 70um away from peak_density
-        # um_per_bin = 0.947408849697405 # at 1.15x objective (regular)
-        um_per_bin = 0.990472888320014 # at 1.1x objective (regular)
+        um_per_bin = 0.947408849697405 # at 1.15x objective (regular)
+        # um_per_bin = 0.990472888320014 # at 1.1x objective (regular)
         
         # Layer thicknesses based on mouse visual cortex anatomy
         layer4_half_width_um = 70  # μm from peak (±)

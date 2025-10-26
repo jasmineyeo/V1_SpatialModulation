@@ -169,13 +169,26 @@ def calculate_sharpness_metrics_for_offset(twop_dict, vr_dict, offset_frames, fr
     smoothed = smooth_spikes(offset_spike_data, framerate, window_ms=500)
     
     # Filter trials
-    filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_trial_filtering(
+    # filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_trial_filtering(
+    #     smoothed, 
+    #     vr_dict['interp_location'],
+    #     min_trial_duration_seconds=5, 
+    #     max_trial_duration_seconds=60,
+    #     framerate=framerate
+    # )
+    result = DF.process_data_with_speed_filtering(
         smoothed, 
         vr_dict['interp_location'],
         min_trial_duration_seconds=5, 
         max_trial_duration_seconds=60,
-        framerate=framerate
+        framerate=framerate,
+        min_speed_cm_s=2.0,
+        frames_to_keep=5,
+        max_location_range_au=400,
+        filter_backward_laps=True
     )
+
+    (filtered_spks_laps, filtered_location_laps, filtered_speed_laps, n_valid_laps) = result
     
     if n_valid_laps == 0:
         return None
@@ -263,7 +276,7 @@ def find_optimal_temporal_offset(twop_dict, vr_dict, framerate, offset_range=Non
         Recommended optimal offset (consensus across metrics)
     """
     if offset_range is None:
-        offset_range = [-2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8]
+        offset_range = [-13, -12, -11, -10, -9, -8, -7, -6, -5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     
     # print("Finding optimal temporal offset based on tuning curve sharpness...")
     # print(f"Testing offsets: {offset_range} frames")
@@ -488,10 +501,19 @@ def create_simple_before_after_comparison(twop_dict, vr_dict, cell_idx, framerat
         smoothed = smooth_spikes(offset_spike_data, framerate, window_ms=500)
         
         # Filter trials
-        filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_trial_filtering(
-            smoothed, vr_dict['interp_location'],
-            min_trial_duration_seconds=5, max_trial_duration_seconds=60, framerate=framerate
+        result = DF.process_data_with_speed_filtering(
+            smoothed, 
+            vr_dict['interp_location'],
+            min_trial_duration_seconds=5, 
+            max_trial_duration_seconds=60,
+            framerate=framerate,
+            min_speed_cm_s=2.0,
+            frames_to_keep=5,
+            max_location_range_au=400,
+            filter_backward_laps=True
         )
+
+        (filtered_spks_laps, filtered_location_laps, filtered_speed_laps, n_valid_laps) = result
         
         if n_valid_laps == 0:
             return None, None, None
@@ -674,11 +696,24 @@ def find_best_example_cells(twop_dict, vr_dict, framerate, optimal_offset=6, n_c
                 offset_spike_data = apply_temporal_offset(twop_dict['sps'], offset)
                 smoothed = smooth_spikes(offset_spike_data, framerate, window_ms=500)
                 
-                filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_trial_filtering(
-                    smoothed, vr_dict['interp_location'], 
-                    min_trial_duration_seconds=5, max_trial_duration_seconds=60, framerate=framerate
+                # filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_trial_filtering(
+                #     smoothed, vr_dict['interp_location'], 
+                #     min_trial_duration_seconds=5, max_trial_duration_seconds=60, framerate=framerate
+                # )
+                result = DF.process_data_with_speed_filtering(
+                    smoothed, 
+                    vr_dict['interp_location'],
+                    min_trial_duration_seconds=5, 
+                    max_trial_duration_seconds=60,
+                    framerate=framerate,
+                    min_speed_cm_s=2.0,
+                    frames_to_keep=5,
+                    max_location_range_au=400,
+                    filter_backward_laps=True
                 )
-                
+
+                (filtered_spks_laps, filtered_location_laps, filtered_speed_laps, n_valid_laps) = result
+    
                 if n_valid_laps == 0:
                     return None
                 
@@ -780,11 +815,24 @@ def create_multiple_examples_split(twop_dict, vr_dict, framerate, optimal_offset
                 offset_spike_data = apply_temporal_offset(twop_dict['sps'], offset)
                 smoothed = smooth_spikes(offset_spike_data, framerate, window_ms=500)
                 
-                filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_trial_filtering(
-                    smoothed, vr_dict['interp_location'],
-                    min_trial_duration_seconds=5, max_trial_duration_seconds=60, framerate=framerate
+                # filtered_spks_laps, filtered_location_laps, n_valid_laps = DF.process_data_with_trial_filtering(
+                #     smoothed, vr_dict['interp_location'],
+                #     min_trial_duration_seconds=5, max_trial_duration_seconds=60, framerate=framerate
+                # )
+                result = DF.process_data_with_speed_filtering(
+                    smoothed, 
+                    vr_dict['interp_location'],
+                    min_trial_duration_seconds=5, 
+                    max_trial_duration_seconds=60,
+                    framerate=framerate,
+                    min_speed_cm_s=2.0,
+                    frames_to_keep=5,
+                    max_location_range_au=400,
+                    filter_backward_laps=True
                 )
-                
+
+                (filtered_spks_laps, filtered_location_laps, filtered_speed_laps, n_valid_laps) = result
+    
                 single_revolution_VR = 282.415
                 single_revolution_treadmill = 27.8
                 single_lap_VR = 1320.645683
