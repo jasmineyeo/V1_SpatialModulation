@@ -183,9 +183,7 @@ def calculate_sharpness_metrics_for_offset(twop_dict, vr_dict, offset_frames, fr
         max_trial_duration_seconds=60,
         framerate=framerate,
         min_speed_cm_s=2.0,
-        frames_to_keep=5,
-        max_location_range_au=400,
-        filter_backward_laps=True
+        frames_to_keep=5
     )
 
     (filtered_spks_laps, filtered_location_laps, filtered_speed_laps, n_valid_laps) = result
@@ -508,9 +506,7 @@ def create_simple_before_after_comparison(twop_dict, vr_dict, cell_idx, framerat
             max_trial_duration_seconds=60,
             framerate=framerate,
             min_speed_cm_s=2.0,
-            frames_to_keep=5,
-            max_location_range_au=400,
-            filter_backward_laps=True
+            frames_to_keep=5
         )
 
         (filtered_spks_laps, filtered_location_laps, filtered_speed_laps, n_valid_laps) = result
@@ -707,9 +703,7 @@ def find_best_example_cells(twop_dict, vr_dict, framerate, optimal_offset=6, n_c
                     max_trial_duration_seconds=60,
                     framerate=framerate,
                     min_speed_cm_s=2.0,
-                    frames_to_keep=5,
-                    max_location_range_au=400,
-                    filter_backward_laps=True
+                    frames_to_keep=5
                 )
 
                 (filtered_spks_laps, filtered_location_laps, filtered_speed_laps, n_valid_laps) = result
@@ -826,9 +820,7 @@ def create_multiple_examples_split(twop_dict, vr_dict, framerate, optimal_offset
                     max_trial_duration_seconds=60,
                     framerate=framerate,
                     min_speed_cm_s=2.0,
-                    frames_to_keep=5,
-                    max_location_range_au=400,
-                    filter_backward_laps=True
+                    frames_to_keep=5
                 )
 
                 (filtered_spks_laps, filtered_location_laps, filtered_speed_laps, n_valid_laps) = result

@@ -708,10 +708,6 @@ def combined_reliability_test(spatial_activity, n_shuffles=1000,
     return (combined_reliable, reliable_cells, pattern_reliable, 
             avg_cc, cohens_d, odd_even_corr, peak_distances, norm_activity)
     
-import numpy as np
-from scipy import stats
-from tqdm import tqdm
-
 def improved_activity_threshold_check(spatial_activity, method='absolute_percentile', threshold_percentile=10):
     """
     Improved activity threshold that doesn't get dominated by highly active cells.

@@ -19,7 +19,6 @@ sys.path.insert(0, r"C:\Users\jasmineyeo\Documents\GitHub\V1_SpatialModulation")
 import os
 import numpy as np
 import datetime
-import shutil
 from helper import dataLoader, files
 from helper import SpikeSmoothing, ReliabilityTesting as RT, SpatialDiscretization as SD, BehavioralDataFiltering as DF, ResponseVisualization as RV    
 from matplotlib import rcParams
@@ -162,10 +161,10 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
 
     # 2a. Find temporal offset, which yields the best alignment between 2p and behavior data
     optimal_offset, _, _ = SpikeSmoothing.run_offset_optimization(twop_filepath, vr_filepath)
-
+    # optimal_offset = 5
     # Use the optimal offset in your main preprocessing
-    # offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], optimal_offset)
-    offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], -6)
+    offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], optimal_offset)
+    # offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], 5)
 
     # 2b. Smooth the deconvolved traces using a 250 ms Gaussian window
     smoothed = SpikeSmoothing.smooth_spikes(offset_spike_data, framerate, window_ms=250)
@@ -188,9 +187,7 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
             max_trial_duration_seconds=max_trial_duration_seconds,
             framerate=framerate,
             min_speed_cm_s=2.0,
-            frames_to_keep=5,
-            max_location_range_au=400,
-            filter_backward_laps=True
+            frames_to_keep=5
         )
     
     if n_valid_laps == 0:
@@ -209,7 +206,7 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
         physical_lap_length_cm=single_lap_treadmill
     )
     
-    window_cm = 2
+    window_cm = 0.5
     smoothed_spatial_activity = SpikeSmoothing.spatial_smooth(spatial_activity, window_cm=window_cm)
 
     # 4. Test for reliability for individual cells
@@ -217,7 +214,7 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
 
     combined_reliable, reliable_cells, _, avg_cc, cohens_d, _, _, _ = RT.combined_reliability_test_improved(
         smoothed_spatial_activity,
-        n_shuffles=500,
+        n_shuffles=100,
         cc_percentile=90,
         cohen_threshold=0.8,
         min_cc_threshold=0.2,
@@ -271,7 +268,8 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
     # 5. Response Plot - plotting activity of all responsive cells
     combinedreliablecell_save_directory = os.path.join(twop_filepath, 'combined_reliable_cell_plots')
     reliablecell_save_directory = os.path.join(twop_filepath, 'reliable_cell_plots')
-    
+    os.makedirs(combinedreliablecell_save_directory, exist_ok=True)
+    os.makedirs(reliablecell_save_directory, exist_ok=True)
     # saved_files, stats = RT.save_all_reliable_cell_plots(
     #     spatial_activity=normalized_spatial_activity,
     #     reliable_cells=reliable_cells,
@@ -297,7 +295,7 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
     # )
 
     fig1, _ = RV.create_response_plot(normalized_spatial_activity, reliable_cells, clim=(0, 1))
-    fig1.savefig(os.path.join(combinedreliablecell_save_directory, 'reliable_cells.png'), dpi=150)
+    fig1.savefig(os.path.join(reliablecell_save_directory, 'reliable_cells.png'), dpi=150)
 
     fig2, _ = RV.create_response_plot(normalized_spatial_activity, combined_reliable, clim=(0, 1))
     fig2.savefig(os.path.join(combinedreliablecell_save_directory, 'combined_reliable_cells.png'), dpi=150)
@@ -401,12 +399,22 @@ def preprocess_2pVR(twop_filepath, vr_filepath):
 if __name__ == "__main__":
     # twop_filepath = r'F:\2P\spmod\JSY052_ChrnoicImaging\251009_JSY_JSY052_SpatialModulation_Day1\TSeries-10092025-1542-002'
     # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_10092025_05-00-40.txt"
-    twop_filepath = r'F:\2P\spmod\JSY052_ChrnoicImaging\251010_JSY_JSY052_SpatialModulation_Day2\TSeries-10102025-0916-001'
-    vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_10102025_09-34-50.txt"
+    # twop_filepath = r'F:\2P\spmod\JSY052_ChrnoicImaging\251010_JSY_JSY052_SpatialModulation_Day2\TSeries-10102025-0916-001'
+    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_10102025_09-34-50.txt"
     # twop_filepath = r'F:\2P\spmod\JSY052_ChrnoicImaging\251011_JSY_JSY052_SpatialModulation_Day3\TSeries-10112025-1441-002'
     # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_10112025_02-58-11.txt"
     # twop_filepath = r'F:\2P\spmod\JSY052_ChrnoicImaging\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-001'
     # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_10122025_12-30-24.txt"
     # twop_filepath = r'F:\2P\spmod\JSY052_ChrnoicImaging\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-002'
     # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_10122025_01-13-48.txt"
+    twop_filepath = r'F:\2P\spmod\JSY052_ChrnoicImaging\251013_JSY_JSY052_SpatialModulation_Day5\TSeries-10132025-1236-001'
+    vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_10132025_12-46-42.txt"
+
+    # twop_filepath = input("Enter 2P data path: ")
+    # vr_filepath = input("Enter VR log file path: ")
+    
+    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1_raw_separateregistration\TSeries-09062025-1308-001'	
+    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09062025_01-50-45.txt"
+    # twop_filepath = r'F:\2P\spmod\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2_raw_separateregistration\TSeries-09072025-1257-001'	
+    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09072025_01-18-32.txt"
     preprocess_2pVR(twop_filepath, vr_filepath)
