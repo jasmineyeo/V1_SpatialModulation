@@ -8,9 +8,10 @@ import os
 import re
 import datetime
 import numpy as np
-# from helper import TwoP, read_xml, time2float
+
 from .twop import TwoP
-from helper import read_xml, time2float
+from .files import read_xml
+from .time import time2float
 
 class dataLoader:
     def __init__(self, twop_path, behav_path):

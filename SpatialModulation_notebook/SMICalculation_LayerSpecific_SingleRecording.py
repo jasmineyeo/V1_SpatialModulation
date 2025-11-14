@@ -205,10 +205,10 @@ if __name__ == "__main__":
     # ==========================================================================
     
     # Path to your preprocessed data file
-    data_filepath = r"F:\2P\spmod\JSY052_ChrnoicImaging\251009_JSY_JSY052_SpatialModulation_Day1\TSeries-10092025-1542-002"
+    data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251104_JSY_JSY054_SpMod_Day6\TSeries-11042025-1418-001"
     
     # Analysis parameters
-    ONSET_THRESHOLD_CM = 15
+    ONSET_THRESHOLD_CM = 10
     APPLY_ONSET_FILTER = True
     APPLY_CHUNK_FILTER = False
     LAPS_PER_CHUNK = 20
@@ -294,7 +294,7 @@ if __name__ == "__main__":
     results_full = SMI.analyze_spatial_modulation_improved(
         spatial_activity, scaled_bin_centers, analysis_reliable_cells,
         segment_distance=SEGMENT_DISTANCE, exclude_start_cm=EXCLUDE_START_CM, 
-        exclude_end_cm=EXCLUDE_END_CM, smoothing_sigma=SMOOTHING_SIGMA, data_filepath=data_filepath
+        exclude_end_cm=EXCLUDE_END_CM, smoothing_sigma=SMOOTHING_SIGMA
     )
     
     SMI_full = results_full['smi_results']['SMI']

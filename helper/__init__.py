@@ -24,8 +24,8 @@ from .files import (
 from .loadData import (
     dataLoader)
 
-from .Preprocess import (
-    preprocess_2pVR)
+# from .Preprocess import (
+#     preprocess_2pVR)
 
 from .ReliabilityTesting import (
     test_cell_reliability, 
@@ -100,8 +100,8 @@ __all__ = ["calculate_speed_per_lap", "reshape_into_laps_forward_only", "process
            "detrendAdaptation",
             "read_xml", "write_h5", "read_h5", "recursively_save_dict_contents_to_group", "recursively_load_dict_contents_from_group",
             "dataLoader",
-            "preprocess_2pVR",
-            "test_cell_reliability", "test_cell_reliability_with_edge_visualization", "plot_edge_activity_distributions", "visualize_cell_edge_profiles", "normalize_spatial_activity", "plot_reliable_cells_side_by_side", "plot_reliable_cells_grid","plot_reliable_cells_waterfall", "evaluate_pattern_similarity", "combined_reliability_test", "combined_reliability_test_improved", "find_robust_peak", "evaluate_pattern_similarity_improved", "test_cell_reliability_improved", "improved_activity_threshold_check", "plot_individual_reliable_cells", "create_summary_figure", "save_all_reliable_cell_plots",
+            # "preprocess_2pVR",
+            "plot_individual_reliable_cells_to_pdf","test_cell_reliability", "test_cell_reliability_with_edge_visualization", "plot_edge_activity_distributions", "visualize_cell_edge_profiles", "normalize_spatial_activity", "plot_reliable_cells_side_by_side", "plot_reliable_cells_grid","plot_reliable_cells_waterfall", "evaluate_pattern_similarity", "combined_reliability_test", "combined_reliability_test_improved", "find_robust_peak", "evaluate_pattern_similarity_improved", "test_cell_reliability_improved", "improved_activity_threshold_check", "plot_individual_reliable_cells", "create_summary_figure", "save_all_reliable_cell_plots",
             "create_response_plot", "create_waterfall_plot",
             "spatial_assignment", "spatial_assignment_with_physical_units",
             "double_gaussian", "fit_response_profile", "calculate_SMI_improved", "plot_SMI_results_improved", "analyze_spatial_modulation_improved", "calculate_SMI_improved_debug",

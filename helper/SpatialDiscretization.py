@@ -64,7 +64,7 @@ def spatial_assignment(lapnum, spks_laps, location_laps, single_lap_treadmill):
 def spatial_assignment_with_physical_units(lapnum, spks_laps, location_laps_cm, physical_lap_length_cm=130):
     """
     Perform spatial discretization of neural activity data with variable-length laps.
-    Now uses physical distance units throughout.
+    Now uses physical distance units throughout with FIXED spatial bins.
     
     Parameters:
     -----------
@@ -96,12 +96,21 @@ def spatial_assignment_with_physical_units(lapnum, spks_laps, location_laps_cm, 
     n_bins = round(physical_lap_length_cm)
     print(f"Using {n_bins} spatial bins (1 cm per bin)")
     
-    # Create spatial bins based on the range of all location data (now in cm)
-    location_min = min(np.min(loc) for loc in location_laps_cm)
-    location_max = max(np.max(loc) for loc in location_laps_cm)
+    # FIXED: Create spatial bins based on KNOWN track length, not actual data range
+    location_min = 0.0  # Track always starts at 0
+    location_max = physical_lap_length_cm  # Track always ends at physical_lap_length_cm
     
-    print(f"Physical location range: {location_min:.2f} to {location_max:.2f} cm")
+    # Check actual data range for diagnostics
+    actual_min = min(np.min(loc) for loc in location_laps_cm)
+    actual_max = max(np.max(loc) for loc in location_laps_cm)
     
+    print(f"Fixed spatial bins: {location_min:.2f} to {location_max:.2f} cm")
+    print(f"Actual data range: {actual_min:.2f} to {actual_max:.2f} cm")
+    
+    if actual_max < location_max * 0.95:
+        print(f"⚠️  WARNING: Animals only reached {actual_max:.2f} cm ({actual_max/location_max*100:.1f}% of track)")
+    
+    # Create bins spanning the full track
     spatial_bins = np.linspace(location_min, location_max, n_bins + 1)
     bin_centers = (spatial_bins[:-1] + spatial_bins[1:]) / 2
     
@@ -112,7 +121,9 @@ def spatial_assignment_with_physical_units(lapnum, spks_laps, location_laps_cm, 
     # Process each lap
     for lap_idx, (lap_spks, lap_location_cm) in enumerate(zip(spks_laps, location_laps_cm)):
         # Assign timepoints to spatial bins
-        bin_indices = np.clip(np.digitize(lap_location_cm, spatial_bins) - 1, 0, n_bins-1)
+        # FIXED: Clip to valid range before digitizing
+        lap_location_cm_clipped = np.clip(lap_location_cm, location_min, location_max)
+        bin_indices = np.clip(np.digitize(lap_location_cm_clipped, spatial_bins) - 1, 0, n_bins-1)
         
         # Calculate activity for each bin in this lap
         for bin_idx in range(n_bins):

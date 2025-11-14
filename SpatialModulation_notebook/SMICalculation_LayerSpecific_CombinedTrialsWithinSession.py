@@ -1,13 +1,14 @@
 """
 SMICalculation_LayerSpecific_CombinedTrialsWithinSession_FORJSY044.py
 A script for calculating the Spatial Modulation Index (SMI) for specific layers in the mouse primary visual cortex
+for a session with multiple recordings per day (ex. JSY044), split into temporal chunks, 
 with filtering for onset responses (cells that peak at the beginning of the corridor).
 
 Input: Combined session data from CombiningMultipleTrialsWithinSession.py
-Output: SMI values for each layer, excluding onset response cells, split into 30-lap chunks
+Output: SMI values for each layer, excluding onset response cells, split into 20-lap chunks
 
 JSY, 10/04/25
-Modified to exclude onset responses and split data into 30-lap chunks
+Modified to exclude onset responses and split data into 20-lap chunks
 """
 import sys
 sys.path.insert(0, r"C:\Users\jasmineyeo\Documents\GitHub\V1_SpatialModulation")
@@ -189,7 +190,7 @@ if __name__ == "__main__":
     # Configuration
     # data_filepath = r"F:\2P\spmod\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1_togetherregistration"
     # data_filepath = r"F:\2P\spmod\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2_togetherregistration"
-    data_filepath = r"F:\2P\spmod\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_togetherregistration"
+    data_filepath = r"F:\2P\spmod\V1prism\w_JSY054_ChronicImaging\251030_JSY_JSY054_SpMod_Day1"
     
     ONSET_THRESHOLD_CM = 15
     APPLY_ONSET_FILTER = True

@@ -249,7 +249,7 @@ def calculate_sharpness_metrics_for_offset(twop_dict, vr_dict, offset_frames, fr
     
     return metrics
 
-def find_optimal_temporal_offset(twop_dict, vr_dict, framerate, offset_range=None):
+def find_optimal_temporal_offset(twop_dict, vr_dict, framerate, offset_range=None, twop_filepath=None):
     """
     Find optimal temporal offset based on tuning curve sharpness metrics.
     
@@ -349,14 +349,17 @@ def find_optimal_temporal_offset(twop_dict, vr_dict, framerate, offset_range=Non
     print("="*60)
     
     # # Create visualization
-    create_offset_comparison_plot(offset_results, best_offsets, optimal_offset, framerate)
+    create_offset_comparison_plot(offset_results, best_offsets, optimal_offset, framerate, twop_filepath)
     
     return offset_results, best_offsets, optimal_offset
 
-def create_offset_comparison_plot(offset_results, best_offsets, optimal_offset, framerate):
+def create_offset_comparison_plot(offset_results, best_offsets, optimal_offset, framerate, twop_filepath=None):
     """
     Create visualization comparing different temporal offsets.
     """
+    
+    import os
+    
     valid_offsets = list(offset_results.keys())
     
     # Extract metrics
@@ -418,7 +421,9 @@ def create_offset_comparison_plot(offset_results, best_offsets, optimal_offset, 
     ax.legend()
     
     plt.tight_layout()
-    plt.show()
+    save_path = os.path.join(twop_filepath, 'Temporal_Offset_Optimization.png') if twop_filepath else 'Temporal_Offset_Optimization.png'
+    plt.savefig(save_path, dpi=300)
+    # plt.show()
     
     return fig
 
@@ -459,7 +464,7 @@ def run_offset_optimization(twop_filepath, vr_filepath, offset_range=None):
     
     # Find optimal temporal offset
     offset_results, best_offsets, optimal_offset = find_optimal_temporal_offset(
-        twop_dict, vr_dict, framerate, offset_range=offset_range
+        twop_dict, vr_dict, framerate, offset_range=offset_range, twop_filepath=twop_filepath
     )
     
     return optimal_offset, offset_results, best_offsets

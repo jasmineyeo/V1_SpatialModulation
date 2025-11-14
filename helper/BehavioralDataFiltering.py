@@ -36,42 +36,32 @@ def calculate_speed_per_lap(location_laps_cm, framerate):
     
     return speed_laps
 
-
 def reshape_into_laps_forward_only(spks, location, 
-                                   high_percentile=90, 
+                                   high_percentile=90,  # Keep for backward compatibility
+                                   use_fixed_threshold=True,  # NEW
+                                   track_length_au=None,  # NEW
                                    min_lap_length=50,
                                    plot_detection=False):
     """
     Detect laps based on reaching the HIGH point (end of corridor).
     Each lap = start → end. Teleportation periods are automatically excluded.
-    
-    Parameters:
-    -----------
-    spks : numpy.ndarray
-        Spike data (cells x time)
-    location : numpy.ndarray
-        Location data in AU
-    high_percentile : float
-        Percentile to detect "end of corridor" (default: 90)
-    min_lap_length : int
-        Minimum frames for valid lap
-    plot_detection : bool
-        Whether to plot
-        
-    Returns:
-    --------
-    spks_laps : list
-    location_laps : list
-    n_laps : int
     """
     
     # Find the "end point" threshold
-    threshold_high = np.percentile(location, high_percentile)
-    threshold_low = np.percentile(location, 10)  # Start point
+    if use_fixed_threshold and track_length_au is not None:
+        # Use fixed threshold based on known track length
+        threshold_high = track_length_au * 0.98  # 95% of track length
+        threshold_low = track_length_au * 0.05   # 5% of track length
+        print(f"\nUsing FIXED thresholds based on track length:")
+    else:
+        # Use percentile-based thresholds (original behavior)
+        threshold_high = np.percentile(location, high_percentile)
+        threshold_low = np.percentile(location, 10)
+        print(f"\nUsing PERCENTILE thresholds:")
     
-    print(f"\nForward-only lap detection:")
     print(f"  Start threshold: {threshold_low:.1f} AU")
     print(f"  End threshold: {threshold_high:.1f} AU")
+    print(f"  Actual data range: {np.min(location):.1f} to {np.max(location):.1f} AU")
     
     # Find all crossings of the HIGH threshold (lap completions)
     above_threshold = location > threshold_high
@@ -86,23 +76,37 @@ def reshape_into_laps_forward_only(spks, location,
         print("  No lap completions detected!")
         return None, None, 0
     
-    # Find lap starts: first frame below low threshold BEFORE each lap end
+    # FIXED: Find lap starts properly
+    # Method: After each lap end, find the MINIMUM location point (track reset)
+    # This captures the true start of the next lap
     lap_starts = []
     
-    for lap_end in lap_end_frames:
-        # Search backward from lap end to find where location was below threshold
-        search_window = location[:lap_end]
-        below_threshold_frames = np.where(search_window < threshold_low)[0]
+    # First lap starts at the beginning
+    lap_starts.append(0)
+    
+    # For subsequent laps, find minimum location after previous lap end
+    for i in range(len(lap_end_frames) - 1):
+        prev_lap_end = lap_end_frames[i]
+        next_lap_end = lap_end_frames[i + 1]
         
-        if len(below_threshold_frames) > 0:
-            lap_start = below_threshold_frames[-1]  # Last frame below threshold
-        else:
-            lap_start = 0  # Default to beginning
+        # Search for minimum location between lap completions
+        # This is where the track "resets" and the new lap begins
+        search_window = location[prev_lap_end:next_lap_end]
+        min_location_idx = np.argmin(search_window)
+        lap_start = prev_lap_end + min_location_idx
         
         lap_starts.append(lap_start)
     
     lap_starts = np.array(lap_starts)
     lap_ends = lap_end_frames
+    
+    # Verify we have matching starts and ends
+    if len(lap_starts) != len(lap_ends):
+        print(f"  WARNING: Mismatch between starts ({len(lap_starts)}) and ends ({len(lap_ends)})")
+        # Trim to matching length
+        min_len = min(len(lap_starts), len(lap_ends))
+        lap_starts = lap_starts[:min_len]
+        lap_ends = lap_ends[:min_len]
     
     # Filter valid laps
     print(f"\n  Lap verification:")
@@ -124,11 +128,19 @@ def reshape_into_laps_forward_only(spks, location,
                 print(f"    Lap {i+1}: INVALID (range too small: {lap_range:.1f} AU)")
             continue
         
+        # ADDED: Check that lap actually starts near the beginning
+        lap_start_location = location[start]
+        if lap_start_location > threshold_low * 2:  # Should start near bottom
+            if i < 10:
+                print(f"    Lap {i+1}: INVALID (starts too high: {lap_start_location:.1f} AU)")
+            continue
+        
         valid_laps.append(i)
         
         if i < 10:
             print(f"    Lap {i+1}: OK - frames {start}-{end} ({lap_length} frames), "
-                  f"range {np.min(lap_loc):.1f}-{np.max(lap_loc):.1f} AU")
+                  f"range {np.min(lap_loc):.1f}-{np.max(lap_loc):.1f} AU, "
+                  f"start location: {lap_start_location:.1f} AU")
     
     lap_starts = lap_starts[valid_laps]
     lap_ends = lap_ends[valid_laps]
@@ -172,38 +184,38 @@ def process_data_with_speed_filtering(spks, location,
                                     max_trial_duration_seconds=30, 
                                     framerate=10, 
                                     min_speed_cm_s=2.0,
-                                    frames_to_keep=5):
+                                    frames_to_keep=5,
+                                    lap_start_grace_cm=5.0):
     """
-    Process 2P and VR data with speed-based filtering:
-    1. Split data into trials/laps (forward motion only)
-    2. Convert location to cm for each lap
-    3. Calculate speed PER LAP (no teleportation artifacts)
-    4. Filter out trials that take too long or too short
-    5. Remove periods with speed below threshold (stationary periods)
-    
-    Returns:
-    --------
-    filtered_spks_laps : list
-        List of filtered spike data for each valid lap
-    filtered_location_laps : list
-        List of filtered location data for each valid lap (in cm)
-    filtered_speed_laps : list
-        List of filtered speed data for each valid lap (in cm/s)
-    n_valid_laps : int
-        Number of valid laps after filtering
+    Process 2P and VR data with speed-based filtering.
     """
     
-    # Step 1: Calculate conversion factor
-    print("Converting VR units to physical distance...")
-    vr_range = np.max(location) - np.min(location)
-    conversion_factor = 130.0 / vr_range  # cm per AU
+    # Step 1: Determine track length in VR units
+    print("Analyzing VR track dimensions...")
     
+    # CRITICAL: Use the MAXIMUM location as track length reference
+    # Not the range, since location might start above 0
+    if np.max(location) < 393:
+        track_length_au = np.max(location)
+    elif np.max(location) > 393:
+        track_length_au = 393.0
+        
+    
+    location_range = track_length_au - np.min(location)
+
+
+    print(f"Track length (VR units): {track_length_au:.1f} AU")
+    print(f"Location range: {location_range:.1f} AU")
+    
+    # Calculate conversion factor
+    conversion_factor = 130.0 / location_range  # cm per AU
     print(f"VR conversion factor: {conversion_factor:.4f} cm per AU")
     
-    # Step 2: Detect laps (FORWARD MOTION ONLY)
+    # Step 2: Detect laps with FIXED thresholds
     spks_laps, location_laps, n_laps = reshape_into_laps_forward_only(
         spks, location,
-        high_percentile=90,
+        use_fixed_threshold=True,  # NEW
+        track_length_au=track_length_au,  # NEW
         min_lap_length=50,
         plot_detection=False
     )
@@ -276,14 +288,19 @@ def process_data_with_speed_filtering(spks, location,
                 end_idx = period[-1]
                 mask[start_idx + frames_to_keep:end_idx - frames_to_keep + 1] = False
                 removed_frames += (end_idx - frames_to_keep + 1) - (start_idx + frames_to_keep)
-        
+                
+        lap_location_norm = lap_loc_cm - np.min(lap_loc_cm)
+        grace_mask = lap_location_norm <= lap_start_grace_cm
+        combined_mask = grace_mask | mask
+
+
         # Apply mask to ALL THREE arrays
-        filtered_spks_laps.append(lap_spks[:, mask])
-        filtered_location_laps.append(lap_loc_cm[mask])
-        filtered_speed_laps.append(lap_speed[mask])
+        filtered_spks_laps.append(lap_spks[:, combined_mask])
+        filtered_location_laps.append(lap_loc_cm[combined_mask])
+        filtered_speed_laps.append(lap_speed[combined_mask])
         
         original_frames = len(lap_loc_cm)
-        kept_frames = np.sum(mask)
+        kept_frames = np.sum(combined_mask)
         print(f"  Lap {i+1}: {kept_frames}/{original_frames} frames kept " +
               f"({kept_frames/original_frames*100:.1f}%), removed {removed_frames} slow frames")
     
@@ -292,7 +309,7 @@ def process_data_with_speed_filtering(spks, location,
     print(f"\nFinal result: {n_valid_laps} valid laps after all filtering")
     
     # Plot speed distribution for final filtered data
-    all_lap_speeds = np.concatenate(filtered_speed_laps)
+    # all_lap_speeds = np.concatenate(filtered_speed_laps)
     # plot_speed_distribution(all_lap_speeds, min_speed_cm_s, framerate)
 
     return filtered_spks_laps, filtered_location_laps, filtered_speed_laps, n_valid_laps
