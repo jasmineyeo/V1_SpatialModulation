@@ -1,5 +1,5 @@
 """
-run_speed_tuning_by_layer.py
+SpeedModulation_Run_Speed_Tuning_by_Layer.py
 
 Run speed tuning analysis using the SIMPLE method (recommended).
 Q_S method is commented out but available for comparison.

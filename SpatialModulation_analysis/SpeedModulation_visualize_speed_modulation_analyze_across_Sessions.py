@@ -1,5 +1,5 @@
 """
-visualize_speed_modulation_analyze_across_Sessions.py
+SpeedModulation_visualize_speed_modulation_analyze_across_Sessions.py
 
 Creates a series of focused, publication-quality figures for one-on-one meeting.
 Each figure emphasizes ONE key finding.

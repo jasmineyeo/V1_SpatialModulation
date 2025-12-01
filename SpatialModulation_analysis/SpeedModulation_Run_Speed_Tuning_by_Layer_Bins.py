@@ -1,5 +1,5 @@
 """
-run_speed_tuning_by_layer_bins.py
+SpeedModulation_Run_Speed_Tuning_by_Layer_Bins.py
 
 Run speed tuning analysis using n SPEED BINS with correlation-based modulation.
 More fine-grained than the 3-bin approach.

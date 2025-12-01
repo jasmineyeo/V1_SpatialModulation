@@ -5,6 +5,7 @@ from scipy.ndimage import gaussian_filter1d
 from scipy import stats
 from matplotlib.colors import LinearSegmentedColormap
 import warnings
+import os
 
 class SpatialModulationIndexLayerSpecific:
     """Class for analyzing spatial modulation in neural data across cortical layers."""
@@ -213,7 +214,7 @@ class SpatialModulationIndexLayerSpecific:
         return layer_results
 
     @staticmethod
-    def plot_layer_comparison(layer_results):
+    def plot_layer_comparison(layer_results, save_path=None):
         """
         Create comparative plots for layer-specific SMI results.
         
@@ -394,7 +395,8 @@ class SpatialModulationIndexLayerSpecific:
         ax.legend()
         
         plt.tight_layout()
-        plt.show()
+        # plt.show()
+        plt.savefig(os.path.join(save_path, "layer_smi_comparison.png"), dpi=300, bbox_inches='tight')
         
         # Create statistical comparison between layers
         print("\nStatistical comparison between layers:")
@@ -431,7 +433,7 @@ class SpatialModulationIndexLayerSpecific:
                     print("  No significant differences between layers")
 
     @staticmethod
-    def plot_layer_distribution(med_coords, layer_cells, reliable_cells, FOV):
+    def plot_layer_distribution(med_coords, layer_cells, reliable_cells, FOV, data_filepath=None):
         """
         Visualize layer distribution of cells with equal subplot sizes.
         
@@ -616,7 +618,7 @@ class SpatialModulationIndexLayerSpecific:
                     if results is not None and len(results['SMI']) > 0]
         
         if len(valid_layers) > 0:
-            SpatialModulationIndexLayerSpecific.plot_layer_comparison(layer_results)
+            SpatialModulationIndexLayerSpecific.plot_layer_comparison(layer_results, save_path=save_path)
         else:
             print("No valid layers for visualization")
         
@@ -1040,6 +1042,6 @@ class SpatialModulationIndexLayerSpecific:
         
         # Save if path provided
         if save_path:
-            plt.savefig(save_path, dpi=300, bbox_inches='tight')
+            plt.savefig(os.path.join(save_path, "layer_smi_distribution.png"), dpi=300, bbox_inches='tight')
         
         return fig

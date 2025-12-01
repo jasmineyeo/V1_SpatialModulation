@@ -1,5 +1,5 @@
 """
-speed_modulation_analyze_across_sessions.py
+SpeedModulation_analyze_across_sessions.py
 
 Compare speed modulation across all recording sessions for JSY052.
 """

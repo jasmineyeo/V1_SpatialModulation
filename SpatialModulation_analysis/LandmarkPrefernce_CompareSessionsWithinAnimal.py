@@ -1,6 +1,7 @@
 """
-LandmarkPrefernce_CompareSessions.py
-Script for comparing landmark preferences across multiple recording sessions
+LandmarkPrefernce_CompareSessionsWithinAnimal.py
+Script for comparing landmark preferences across multiple recording sessions within the same animal
+Run this after running LandmarkPrefernce_SingleSessionAnalysis.py for each session
 
 JSY, 11/2025
 """
@@ -71,14 +72,14 @@ def load_session_data(h5_path):
             
             full_grp = f['full_session']
             
-            print(f"  Loading {os.path.basename(h5_path)}:")
+            # print(f"  Loading {os.path.basename(h5_path)}:")
             
             for h5_layer_name in full_grp.keys():
                 layer_grp = full_grp[h5_layer_name]
                 
                 # Restore original layer name
                 original_layer_name = restore_layer_name(h5_layer_name, layer_grp)
-                print(f"    Layer: '{h5_layer_name}' → '{original_layer_name}'")
+                # print(f"    Layer: '{h5_layer_name}' → '{original_layer_name}'")
                 
                 # Load data
                 layer_data = {}
@@ -200,9 +201,9 @@ def load_multiple_sessions(data_dir, pattern="*landmark_preferences.h5", recursi
         
         raise ValueError(f"No files found matching pattern: {search_pattern}")
     
-    print(f"Found {len(h5_files)} session files:")
-    for f in h5_files:
-        print(f"  - {os.path.basename(f)}")
+    # print(f"Found {len(h5_files)} session files:")
+    # for f in h5_files:
+    #     print(f"  - {os.path.basename(f)}")
     
     # Load each session
     sessions = []
@@ -210,7 +211,7 @@ def load_multiple_sessions(data_dir, pattern="*landmark_preferences.h5", recursi
         try:
             session_data = load_session_data(h5_path)
             sessions.append(session_data)
-            print(f"Loaded: {session_data['session_id']}")
+            # print(f"Loaded: {session_data['session_id']}")
         except Exception as e:
             print(f"Error loading {h5_path}: {e}")
     
@@ -250,7 +251,7 @@ def compare_sessions_by_layer(sessions, layer_name='L2/3'):
         print(f"No data for {layer_name} in any session")
         return None
     
-    print(f"\nComparing {layer_name} across {len(valid_sessions)} sessions:")
+    # print(f"\nComparing {layer_name} across {len(valid_sessions)} sessions:")
     
     # Extract proportions from each session
     n_landmarks = len(valid_sessions[0]['full_session'][layer_name]['landmark_proportions'])
@@ -264,7 +265,7 @@ def compare_sessions_by_layer(sessions, layer_name='L2/3'):
         counts_matrix[i, :] = layer_data['landmark_counts']
         session_ids.append(session['session_id'])
         
-        print(f"  {session['session_id']}: {layer_data['n_cells']} cells")
+        # print(f"  {session['session_id']}: {layer_data['n_cells']} cells")
     
     # Calculate statistics
     mean_proportions = np.mean(proportions_matrix, axis=0)
@@ -503,29 +504,316 @@ def plot_variability_across_sessions(sessions, landmark_positions=[30, 60, 90, 1
     
     return fig
 
+def plot_heatmap_across_sessions(sessions, landmark_positions=[25, 55, 85, 115],
+                                 save_path=None, animal_id=None):
+    """
+    Create heatmap showing landmark preferences by layer across sessions.
+    Similar to your across-animals heatmap but for single animal across days.
+    
+    Layout: One heatmap per session, showing layer x landmark
+    """
+    
+    layer_order = ['L2/3', 'L4', 'L5', 'L6']
+    n_landmarks = len(landmark_positions)
+    n_sessions = len(sessions)
+    
+    # Sort sessions by day number
+    def extract_day_number(session_id):
+        import re
+        match = re.search(r'Day(\d+)', session_id)
+        return int(match.group(1)) if match else 0
+    
+    sessions_sorted = sorted(sessions, key=lambda s: extract_day_number(s['session_id']))
+    
+    # Create figure
+    n_cols = min(4, n_sessions)
+    n_rows = int(np.ceil(n_sessions / n_cols))
+    
+    fig, axes = plt.subplots(n_rows, n_cols, figsize=(5*n_cols, 4*n_rows))
+    axes = np.atleast_2d(axes)
+    if n_rows == 1:
+        axes = axes.reshape(1, -1)
+    axes = axes.flatten()
+    
+    for sess_idx, session in enumerate(sessions_sorted):
+        ax = axes[sess_idx]
+        session_id = session['session_id']
+        
+        # Build heatmap data for this session
+        heatmap_data = np.full((len(layer_order), n_landmarks), np.nan)
+        count_data = np.zeros((len(layer_order), n_landmarks), dtype=int)
+        
+        for layer_idx, layer_name in enumerate(layer_order):
+            if layer_name in session['full_session']:
+                layer_data = session['full_session'][layer_name]
+                heatmap_data[layer_idx, :] = layer_data['landmark_proportions']
+                count_data[layer_idx, :] = layer_data['landmark_counts']
+        
+        # Plot heatmap
+        im = ax.imshow(heatmap_data, cmap='YlOrRd', aspect='auto', vmin=0, vmax=1)
+        
+        # Add text annotations
+        for i in range(len(layer_order)):
+            for j in range(n_landmarks):
+                if not np.isnan(heatmap_data[i, j]):
+                    text_str = f'{heatmap_data[i, j]:.2f}\n(n={count_data[i, j]})'
+                    ax.text(j, i, text_str, ha='center', va='center', 
+                           fontsize=8, color='black')
+                else:
+                    ax.text(j, i, 'N/A', ha='center', va='center', fontsize=8)
+        
+        # Labels
+        ax.set_xticks(np.arange(n_landmarks))
+        ax.set_yticks(np.arange(len(layer_order)))
+        ax.set_xticklabels([f'L{i+1}\n({landmark_positions[i]}cm)' for i in range(n_landmarks)], fontsize=9)
+        ax.set_yticklabels(layer_order, fontsize=10)
+        ax.set_xlabel('Landmark', fontsize=10)
+        ax.set_ylabel('Layer', fontsize=10)
+        ax.set_title(f'{session_id}', fontsize=11, fontweight='bold')
+    
+    # Hide unused axes
+    for idx in range(n_sessions, len(axes)):
+        axes[idx].axis('off')
+    
+    # Add colorbar
+    cbar_ax = fig.add_axes([0.92, 0.15, 0.02, 0.7])
+    fig.colorbar(im, cax=cbar_ax, label='Proportion of Cells')
+    
+    title = f'Landmark Preferences Across Sessions'
+    if animal_id:
+        title = f'{animal_id}: {title}'
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+    plt.tight_layout(rect=[0, 0, 0.90, 0.95])
+    
+    if save_path:
+        fig_path = os.path.join(save_path, 'heatmap_across_sessions.png')
+        plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+        print(f"  Saved: {os.path.basename(fig_path)}")
+    
+    return fig
+
+
+def plot_layer_specific_evolution(sessions, landmark_positions=[25, 55, 85, 115],
+                                  save_path=None, animal_id=None):
+    """
+    For each layer, show how L1 vs L4 preference ratio changes across sessions.
+    This highlights the key biological question: does L4 preference increase with experience?
+    """
+    
+    layer_order = ['L2/3', 'L4', 'L5', 'L6']
+    n_landmarks = len(landmark_positions)
+    
+    # Sort sessions by day
+    def extract_day_number(session_id):
+        import re
+        match = re.search(r'Day(\d+)', session_id)
+        return int(match.group(1)) if match else 0
+    
+    sessions_sorted = sorted(sessions, key=lambda s: extract_day_number(s['session_id']))
+    session_ids = [s['session_id'] for s in sessions_sorted]
+    day_numbers = [extract_day_number(s) for s in session_ids]
+    n_sessions = len(sessions_sorted)
+    
+    # Create figure: 2 rows
+    # Row 1: Line plots for each layer showing all landmark proportions
+    # Row 2: L1/L4 ratio evolution for each layer
+    fig, axes = plt.subplots(2, len(layer_order), figsize=(4*len(layer_order), 8))
+    
+    colors = plt.cm.Set1(np.linspace(0, 1, n_landmarks))
+    
+    for layer_idx, layer_name in enumerate(layer_order):
+        ax_top = axes[0, layer_idx]
+        ax_bottom = axes[1, layer_idx]
+        
+        # Collect data across sessions
+        proportions = np.full((n_sessions, n_landmarks), np.nan)
+        
+        for sess_idx, session in enumerate(sessions_sorted):
+            if layer_name in session['full_session']:
+                proportions[sess_idx, :] = session['full_session'][layer_name]['landmark_proportions']
+        
+        # Top panel: All landmarks
+        for lm_idx in range(n_landmarks):
+            valid_mask = ~np.isnan(proportions[:, lm_idx])
+            if np.any(valid_mask):
+                ax_top.plot(np.array(day_numbers)[valid_mask], 
+                           proportions[valid_mask, lm_idx],
+                           marker='o', linewidth=2, markersize=8,
+                           color=colors[lm_idx],
+                           label=f'L{lm_idx+1} ({landmark_positions[lm_idx]}cm)')
+        
+        ax_top.set_xlabel('Day', fontsize=10)
+        ax_top.set_ylabel('Proportion', fontsize=10)
+        ax_top.set_title(f'{layer_name}', fontsize=11, fontweight='bold')
+        ax_top.set_ylim(0, 1)
+        ax_top.grid(True, alpha=0.3)
+        ax_top.legend(fontsize=7, loc='best')
+        ax_top.set_xticks(day_numbers)
+        
+        # Bottom panel: L1/L4 ratio (or L1 - L4 difference)
+        l1_props = proportions[:, 0]  # First landmark
+        l4_props = proportions[:, -1]  # Last landmark
+        
+        # Calculate difference (positive = L1 dominant, negative = L4 dominant)
+        diff = l1_props - l4_props
+        
+        valid_mask = ~np.isnan(diff)
+        if np.any(valid_mask):
+            ax_bottom.plot(np.array(day_numbers)[valid_mask], diff[valid_mask],
+                          marker='s', linewidth=2, markersize=10, color='purple')
+            ax_bottom.axhline(0, color='gray', linestyle='--', linewidth=1)
+            
+            # Fill regions
+            ax_bottom.fill_between(np.array(day_numbers)[valid_mask], 
+                                   0, diff[valid_mask],
+                                   where=diff[valid_mask] > 0, 
+                                   alpha=0.3, color='red', label='L1 dominant')
+            ax_bottom.fill_between(np.array(day_numbers)[valid_mask], 
+                                   0, diff[valid_mask],
+                                   where=diff[valid_mask] < 0, 
+                                   alpha=0.3, color='blue', label='L4 dominant')
+        
+        ax_bottom.set_xlabel('Day', fontsize=10)
+        ax_bottom.set_ylabel('L1 - L4 Proportion', fontsize=10)
+        ax_bottom.set_title(f'{layer_name}: L1 vs L4 Balance', fontsize=10)
+        ax_bottom.set_ylim(-0.6, 0.6)
+        ax_bottom.grid(True, alpha=0.3)
+        ax_bottom.legend(fontsize=7, loc='best')
+        ax_bottom.set_xticks(day_numbers)
+    
+    title = 'Landmark Preference Evolution'
+    if animal_id:
+        title = f'{animal_id}: {title}'
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    
+    if save_path:
+        fig_path = os.path.join(save_path, 'layer_specific_evolution.png')
+        plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+        print(f"  Saved: {os.path.basename(fig_path)}")
+    
+    return fig
+
+
+def plot_learning_summary(sessions, landmark_positions=[25, 55, 85, 115],
+                          save_path=None, animal_id=None):
+    """
+    Summary plot showing:
+    1. Early vs Late session comparison (first vs last session)
+    2. Statistical test for change in L1/L4 balance
+    """
+    
+    layer_order = ['L2/3', 'L4', 'L5', 'L6']
+    n_landmarks = len(landmark_positions)
+    
+    # Sort sessions
+    def extract_day_number(session_id):
+        import re
+        match = re.search(r'Day(\d+)', session_id)
+        return int(match.group(1)) if match else 0
+    
+    sessions_sorted = sorted(sessions, key=lambda s: extract_day_number(s['session_id']))
+    
+    if len(sessions_sorted) < 2:
+        print("Need at least 2 sessions for learning summary")
+        return None
+    
+    early_session = sessions_sorted[0]
+    late_session = sessions_sorted[-1]
+    
+    # Create figure
+    fig, axes = plt.subplots(1, 3, figsize=(15, 5))
+    
+    # Panel 1: Early session heatmap
+    ax1 = axes[0]
+    early_data = np.full((len(layer_order), n_landmarks), np.nan)
+    for layer_idx, layer_name in enumerate(layer_order):
+        if layer_name in early_session['full_session']:
+            early_data[layer_idx, :] = early_session['full_session'][layer_name]['landmark_proportions']
+    
+    im1 = ax1.imshow(early_data, cmap='YlOrRd', aspect='auto', vmin=0, vmax=1)
+    ax1.set_xticks(np.arange(n_landmarks))
+    ax1.set_yticks(np.arange(len(layer_order)))
+    ax1.set_xticklabels([f'L{i+1}' for i in range(n_landmarks)])
+    ax1.set_yticklabels(layer_order)
+    ax1.set_title(f"Early: {early_session['session_id']}", fontsize=12, fontweight='bold')
+    ax1.set_xlabel('Landmark')
+    ax1.set_ylabel('Layer')
+    
+    # Add values
+    for i in range(len(layer_order)):
+        for j in range(n_landmarks):
+            if not np.isnan(early_data[i, j]):
+                ax1.text(j, i, f'{early_data[i, j]:.2f}', ha='center', va='center', fontsize=9)
+    
+    # Panel 2: Late session heatmap
+    ax2 = axes[1]
+    late_data = np.full((len(layer_order), n_landmarks), np.nan)
+    for layer_idx, layer_name in enumerate(layer_order):
+        if layer_name in late_session['full_session']:
+            late_data[layer_idx, :] = late_session['full_session'][layer_name]['landmark_proportions']
+    
+    im2 = ax2.imshow(late_data, cmap='YlOrRd', aspect='auto', vmin=0, vmax=1)
+    ax2.set_xticks(np.arange(n_landmarks))
+    ax2.set_yticks(np.arange(len(layer_order)))
+    ax2.set_xticklabels([f'L{i+1}' for i in range(n_landmarks)])
+    ax2.set_yticklabels(layer_order)
+    ax2.set_title(f"Late: {late_session['session_id']}", fontsize=12, fontweight='bold')
+    ax2.set_xlabel('Landmark')
+    ax2.set_ylabel('Layer')
+    
+    for i in range(len(layer_order)):
+        for j in range(n_landmarks):
+            if not np.isnan(late_data[i, j]):
+                ax2.text(j, i, f'{late_data[i, j]:.2f}', ha='center', va='center', fontsize=9)
+    
+    # Panel 3: Change (Late - Early)
+    ax3 = axes[2]
+    change_data = late_data - early_data
+    
+    # Use diverging colormap for change
+    max_abs = np.nanmax(np.abs(change_data))
+    im3 = ax3.imshow(change_data, cmap='RdBu_r', aspect='auto', 
+                     vmin=-max_abs, vmax=max_abs)
+    ax3.set_xticks(np.arange(n_landmarks))
+    ax3.set_yticks(np.arange(len(layer_order)))
+    ax3.set_xticklabels([f'L{i+1}' for i in range(n_landmarks)])
+    ax3.set_yticklabels(layer_order)
+    ax3.set_title('Change (Late - Early)', fontsize=12, fontweight='bold')
+    ax3.set_xlabel('Landmark')
+    ax3.set_ylabel('Layer')
+    
+    for i in range(len(layer_order)):
+        for j in range(n_landmarks):
+            if not np.isnan(change_data[i, j]):
+                color = 'white' if abs(change_data[i, j]) > max_abs * 0.5 else 'black'
+                ax3.text(j, i, f'{change_data[i, j]:+.2f}', ha='center', va='center', 
+                        fontsize=9, color=color)
+    
+    plt.colorbar(im3, ax=ax3, label='Δ Proportion')
+    
+    title = f'Learning Summary: {early_session["session_id"]} → {late_session["session_id"]}'
+    if animal_id:
+        title = f'{animal_id}: {title}'
+    fig.suptitle(title, fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    
+    if save_path:
+        fig_path = os.path.join(save_path, 'learning_summary.png')
+        plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+        print(f"  Saved: {os.path.basename(fig_path)}")
+    
+    return fig
 
 # ============================================================================
 # MAIN COMPARISON WORKFLOW
 # ============================================================================
 
-def run_across_session_comparison(data_dir, pattern="*landmark_preferences.h5",
-                                 landmark_positions=[30, 60, 90, 120], recursive=True, save_path = None):
+def run_across_session_comparison(data_dir, pattern="**/*landmark_preferences.h5",
+                                 landmark_positions=[25, 55, 85, 115], 
+                                 recursive=True, save_path=None, animal_id=None):
     """
     Complete workflow for comparing landmark preferences across sessions.
-    
-    Parameters:
-    -----------
-    data_dir : str
-        Directory containing session HDF5 files (can contain wildcards or subdirs)
-    pattern : str
-        Glob pattern to match session files
-    landmark_positions : list
-        Positions of landmarks in cm
-    
-    Returns:
-    --------
-    results : dict
-        Comparison results and figures
     """
     
     print("\n" + "="*70)
@@ -533,8 +821,7 @@ def run_across_session_comparison(data_dir, pattern="*landmark_preferences.h5",
     print("="*70)
     
     # Load all sessions
-    print("\nLoading session data...")
-    sessions = load_multiple_sessions(data_dir, pattern, recursive=recursive)  # UPDATED
+    sessions = load_multiple_sessions(data_dir, pattern, recursive=recursive)
     
     if len(sessions) < 2:
         print("ERROR: Need at least 2 sessions for comparison")
@@ -542,12 +829,25 @@ def run_across_session_comparison(data_dir, pattern="*landmark_preferences.h5",
     
     print(f"\nLoaded {len(sessions)} sessions successfully")
     
+    # Extract animal_id from path if not provided
+    if animal_id is None:
+        import re
+        match = re.search(r'(JSY\d+)', data_dir)
+        if match:
+            animal_id = match.group(1)
+    
+    # Set save path
+    if save_path is None:
+        save_path = data_dir
+    
     # Create visualizations
     print("\nCreating visualizations...")
     
+    # Original plots
     fig_stacked = plot_across_sessions_comparison(
         sessions, landmark_positions,
-        title="Landmark Preferences Across Sessions (Stacked)", save_path=save_path
+        title=f"{animal_id}: Landmark Preferences Across Sessions" if animal_id else "Landmark Preferences Across Sessions",
+        save_path=save_path
     )
     
     fig_trends = plot_landmark_trends_across_sessions(
@@ -558,16 +858,33 @@ def run_across_session_comparison(data_dir, pattern="*landmark_preferences.h5",
         sessions, landmark_positions, save_path=save_path
     )
     
+    # NEW: Improved plots
+    fig_heatmaps = plot_heatmap_across_sessions(
+        sessions, landmark_positions, save_path=save_path, animal_id=animal_id
+    )
+    
+    fig_evolution = plot_layer_specific_evolution(
+        sessions, landmark_positions, save_path=save_path, animal_id=animal_id
+    )
+    
+    fig_learning = plot_learning_summary(
+        sessions, landmark_positions, save_path=save_path, animal_id=animal_id
+    )
+    
     # plt.show()
     
     # Compile results
     results = {
         'sessions': sessions,
         'n_sessions': len(sessions),
+        'animal_id': animal_id,
         'figures': {
             'stacked': fig_stacked,
             'trends': fig_trends,
-            'variability': fig_variability
+            'variability': fig_variability,
+            'heatmaps': fig_heatmaps,
+            'evolution': fig_evolution,
+            'learning': fig_learning
         }
     }
     
@@ -592,7 +909,7 @@ if __name__ == "__main__":
     # ========================================================================
     
     # Your data directory
-    data_dir = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging"
+    data_dir = r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging"
     
     # Pattern options:
     # Option 1: All files directly in data_dir
@@ -650,7 +967,7 @@ if __name__ == "__main__":
         results = run_across_session_comparison(
             data_dir=data_dir,
             pattern=pattern,
-            landmark_positions=[30, 60, 90, 120],
+            landmark_positions=[25, 55, 85, 115],
             recursive=recursive,
             save_path=data_dir
         )

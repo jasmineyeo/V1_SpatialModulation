@@ -148,6 +148,7 @@ class dataLoader:
 
         # Find the closest value in Aligned_Abs_vrT that is greater than twoP_data['AbsoluteT'][-1]
         closest_value = Aligned_Abs_vrT[Aligned_Abs_vrT > twoP_data['AbsoluteT'][-1]][0]
+
         closest_index = np.where(Aligned_Abs_vrT == closest_value)[0][0]
 
         new_VR_data = {}

@@ -1,3 +1,4 @@
+import os
 import numpy as np
 import matplotlib.pyplot as plt
 from scipy.optimize import curve_fit
@@ -425,7 +426,7 @@ def calculate_SMI_improved(spatial_activity, bin_centers, reliable_cells, segmen
     return results
 
 def plot_SMI_results_improved(results, bin_centers, reliable_cells=None, avg_cc=None, 
-                             cohens_d=None, max_examples=10):
+                             cohens_d=None, max_examples=10, data_filepath=None):
     """
     Plot the results of improved SMI calculation with candidate positions.
     """
@@ -476,6 +477,12 @@ def plot_SMI_results_improved(results, bin_centers, reliable_cells=None, avg_cc=
     plt.title(f'SMI Distribution (n={n_valid} cells)')
     plt.legend()
     plt.grid(True, alpha=0.3)
+    
+    if data_filepath is not None:
+        os.makedirs(os.path.join(data_filepath, "SMI_Figures"), exist_ok=True)
+        hist_filename = os.path.join(data_filepath, "SMI_Figures", "SMI_histogram.png")
+        fig_hist.savefig(hist_filename)
+        print(f"Saved histogram to {hist_filename}")
     
     # Categorize cells
     strong = np.sum(valid_SMI > 0.5)
@@ -599,6 +606,10 @@ def plot_SMI_results_improved(results, bin_centers, reliable_cells=None, avg_cc=
                 bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
         
         plt.tight_layout()
+        if data_filepath is not None:
+            example_filename = os.path.join(data_filepath, "SMI_Figures", f"SMI_example_{cell_idx}.png")
+            fig.savefig(example_filename)
+            print(f"Saved example figure for cell {cell_idx} to {example_filename}")
         fig_examples.append(fig)
     
     return [fig_hist] + fig_examples
@@ -606,7 +617,7 @@ def plot_SMI_results_improved(results, bin_centers, reliable_cells=None, avg_cc=
 def analyze_spatial_modulation_improved(spatial_activity, bin_centers, reliable_cells=None, 
                                        avg_cc=None, cohens_d=None, segment_distance=55, 
                                        exclude_boundary_cm=15, exclude_start_cm=None, exclude_end_cm=None,
-                                       smoothing_sigma=1.0):
+                                       smoothing_sigma=1.0, data_filepath = None):
     """
     Improved spatial modulation analysis with asymmetric boundary exclusion and 
     multiple landmark distances.
@@ -675,10 +686,10 @@ def analyze_spatial_modulation_improved(spatial_activity, bin_centers, reliable_
         reliable_cells=reliable_cells,
         avg_cc=avg_cc,
         cohens_d=cohens_d,
-        max_examples=6
+        max_examples=6,
+        data_filepath=data_filepath
     )
-    
-    plt.show()
+
     
     print("\nAnalysis complete!")
     

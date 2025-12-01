@@ -1,12 +1,13 @@
 """
 LandmarkPrefernce_SingleSessionAnalysis.py
 Standalone script for analyzing landmark preferences across cortical layers in a single session.
-You have to run this and then LandmarkPrefernce_CompareSessions.py to compare across sessions
-and then LandmarkPrefernce_ComprehensiveAcrossAnimals.py for comprehensive analysis.
+You have to run this and then LandmarkPrefernce_CompareSessionsWithinAnimal.py to compare across sessions within an animal,
+and then LandmarkPrefernce_ComprehensiveAcrossAnimals.py for comprehensive analysis (across sessions, across animals)
 
 JSY, 11/2025
 """
 
+import re
 import sys
 sys.path.insert(0, r"C:\Users\jasmineyeo\Documents\GitHub\V1_SpatialModulation")
 
@@ -25,38 +26,39 @@ import glob
 # ============================================================================
 # PHASE 1: LANDMARK RESPONSE IDENTIFICATION
 # ============================================================================
-
 def identify_landmark_responses(normalized_spatial_activity, bin_centers, 
-                                landmark_positions, landmark_window=7.0,
-                                boundary_exclusion=(10, 10), smoothing_sigma=1.0):
+                                landmark_positions, 
+                                landmark_windows_config=None,  # NEW: per-landmark config
+                                landmark_window=10.0,  # fallback if config not provided
+                                boundary_exclusion=(10, 10), smoothing_sigma=1.0,
+                                exclude_first_bins=10, exclude_last_bins=10):
     """
     Identify which landmark each cell prefers based on peak responses.
     
-    Validation rules:
-    1. Exclude peaks in first and last boundary_exclusion cm
-    2. Cell must have peak within ±landmark_window of at least one landmark
-    3. If peaks near multiple landmarks, choose highest response
-    4. If peak only in excluded boundary, discard cell
-    
     Parameters:
     -----------
-    normalized_spatial_activity : numpy.ndarray
-        Activity matrix (cells x trials x spatial_bins)
-    bin_centers : numpy.ndarray
-        Centers of spatial bins (cm)
-    landmark_positions : list or array
-        Positions of landmarks (cm), e.g., [30, 60, 90, 120]
+    landmark_windows_config : list of dict, optional
+        Per-landmark window configuration. Each dict should have:
+        - 'before': cm to extend before landmark
+        - 'after': cm to extend after landmark
+        Example: [
+            {'before': 12, 'after': 10},  # L1 - constrained by onset
+            {'before': 15, 'after': 10},  # L2
+            {'before': 15, 'after': 10},  # L3
+            {'before': 15, 'after': 5},   # L4 - constrained by corridor end
+        ]
+        If None, uses symmetric ±landmark_window for all landmarks.
     landmark_window : float
-        Window around landmark (±cm) to consider as landmark response
-    boundary_exclusion : tuple
-        (start_cm, end_cm) to exclude from analysis
-    smoothing_sigma : float
-        Gaussian smoothing sigma for response profiles
+        Fallback symmetric window if landmark_windows_config not provided
+    exclude_first_bins : int
+        Exclude cells whose GLOBAL peak is in the first N bins (onset response)
+    exclude_last_bins : int
+        Exclude cells whose GLOBAL peak is in the last N bins (reward/tunnel response)
     
     Returns:
     --------
     results : dict
-        Dictionary containing landmark preference results
+        Now includes 'rejected_cells' with indices and reasons for rejection
     """
     
     n_cells, n_trials, n_bins = normalized_spatial_activity.shape
@@ -66,25 +68,49 @@ def identify_landmark_responses(normalized_spatial_activity, bin_centers,
     min_pos = np.min(bin_centers)
     max_pos = np.max(bin_centers)
     
-    # Define allowed region (excluding boundaries)
+    # Define regions for display/analysis
     start_exclude, end_exclude = boundary_exclusion
     min_allowed = min_pos + start_exclude
     max_allowed = max_pos - end_exclude
     
-    print(f"\n=== LANDMARK PREFERENCE IDENTIFICATION ===")
-    print(f"Corridor: {min_pos:.1f} to {max_pos:.1f} cm")
-    print(f"Boundary exclusion: {start_exclude} cm from start, {end_exclude} cm from end")
-    print(f"Allowed region: {min_allowed:.1f} to {max_allowed:.1f} cm")
-    print(f"Landmarks at: {landmark_positions} cm")
-    print(f"Landmark window: ±{landmark_window} cm")
+    # Calculate bin thresholds for global peak exclusion
+    bin_spacing = np.mean(np.diff(bin_centers))
+    onset_threshold_cm = min_pos + (exclude_first_bins * bin_spacing)
+    end_threshold_cm = max_pos - (exclude_last_bins * bin_spacing)
     
-    # Define landmark windows
+    print(f"\n=== LANDMARK PREFERENCE IDENTIFICATION ===")
+    print(f"Corridor: {min_pos:.1f} to {max_pos:.1f} cm ({n_bins} bins)")
+    print(f"Bin spacing: {bin_spacing:.2f} cm")
+    print(f"Global peak exclusion:")
+    print(f"  - First {exclude_first_bins} bins (< {onset_threshold_cm:.1f} cm): onset responses")
+    print(f"  - Last {exclude_last_bins} bins (> {end_threshold_cm:.1f} cm): reward/tunnel responses")
+    print(f"Landmarks at: {landmark_positions} cm")
+    
+    # Define landmark windows - PER-LANDMARK CONFIGURATION
     landmark_windows = []
-    for lm_pos in landmark_positions:
-        lm_min = lm_pos - landmark_window
-        lm_max = lm_pos + landmark_window
-        landmark_windows.append((lm_min, lm_max))
-        print(f"  Landmark at {lm_pos} cm: window [{lm_min:.1f}, {lm_max:.1f}] cm")
+    
+    if landmark_windows_config is not None:
+        print(f"Using per-landmark window configuration:")
+        for i, lm_pos in enumerate(landmark_positions):
+            if i < len(landmark_windows_config):
+                config = landmark_windows_config[i]
+                lm_min = lm_pos - config['before']
+                lm_max = lm_pos + config['after']
+                print(f"  Landmark {i+1} at {lm_pos} cm: [{lm_min:.1f}, {lm_max:.1f}] cm "
+                      f"(-{config['before']}, +{config['after']})")
+            else:
+                # Fallback to symmetric if not enough configs
+                lm_min = lm_pos - landmark_window
+                lm_max = lm_pos + landmark_window
+                print(f"  Landmark {i+1} at {lm_pos} cm: [{lm_min:.1f}, {lm_max:.1f}] cm (symmetric fallback)")
+            landmark_windows.append((lm_min, lm_max))
+    else:
+        print(f"Using symmetric windows: ±{landmark_window} cm")
+        for i, lm_pos in enumerate(landmark_positions):
+            lm_min = lm_pos - landmark_window
+            lm_max = lm_pos + landmark_window
+            print(f"  Landmark {i+1} at {lm_pos} cm: [{lm_min:.1f}, {lm_max:.1f}] cm")
+            landmark_windows.append((lm_min, lm_max))
     
     # Compute mean response profiles across trials
     mean_profiles = np.mean(normalized_spatial_activity, axis=1)
@@ -99,68 +125,72 @@ def identify_landmark_responses(normalized_spatial_activity, bin_centers,
     landmark_responses = np.zeros((n_cells, n_landmarks))
     preference_strength = np.zeros(n_cells)
     peak_positions = np.zeros(n_cells)
+    global_peak_bins = np.zeros(n_cells, dtype=int)
     valid_cells = np.zeros(n_cells, dtype=bool)
     
-    # Rejection counters
-    no_peak_in_allowed = 0
-    peak_outside_landmarks = 0
-    peak_only_in_boundary = 0
+    # NEW: Track rejected cells by reason
+    rejected_onset_indices = []
+    rejected_reward_indices = []
+    rejected_no_landmark_indices = []
+    rejected_zero_indices = []
     
     for cell in range(n_cells):
         profile = mean_profiles[cell]
         
-        # Find global peak in allowed region
-        allowed_mask = (bin_centers >= min_allowed) & (bin_centers <= max_allowed)
-        allowed_indices = np.where(allowed_mask)[0]
+        # Find GLOBAL peak first (across ALL bins)
+        global_peak_idx = np.argmax(profile)
+        global_peak_pos = bin_centers[global_peak_idx]
+        global_peak_bins[cell] = global_peak_idx
+        peak_positions[cell] = global_peak_pos  # Store for all cells
         
-        if len(allowed_indices) == 0 or np.max(profile[allowed_indices]) == 0:
-            no_peak_in_allowed += 1
+        # Check for zero activity
+        if profile[global_peak_idx] == 0:
+            rejected_zero_indices.append(cell)
             continue
         
-        # Get peak in allowed region
-        local_peak_idx = np.argmax(profile[allowed_indices])
-        global_peak_idx = allowed_indices[local_peak_idx]
-        peak_pos = bin_centers[global_peak_idx]
-        peak_value = profile[global_peak_idx]
+        # Reject if global peak is in onset region
+        if global_peak_pos < onset_threshold_cm:
+            rejected_onset_indices.append(cell)
+            continue
         
-        # Calculate response at each landmark window
+        # Reject if global peak is in reward/tunnel region
+        if global_peak_pos > end_threshold_cm:
+            rejected_reward_indices.append(cell)
+            continue
+        
+        # Cell passed global peak filter - now check landmark windows
         landmark_peaks = []
         for lm_idx, (lm_min, lm_max) in enumerate(landmark_windows):
-            # Find bins in this landmark window
             lm_mask = (bin_centers >= lm_min) & (bin_centers <= lm_max)
             lm_indices = np.where(lm_mask)[0]
             
             if len(lm_indices) > 0:
-                # Get max response in this landmark window
                 lm_response = np.max(profile[lm_indices])
                 landmark_responses[cell, lm_idx] = lm_response
                 
-                # Check if peak falls in this window
-                if lm_min <= peak_pos <= lm_max:
+                if lm_min <= global_peak_pos <= lm_max:
                     landmark_peaks.append((lm_idx, lm_response))
             else:
                 landmark_responses[cell, lm_idx] = 0
         
-        # Validation: Does peak fall within any landmark window?
+        # Does global peak fall within any landmark window?
         if len(landmark_peaks) == 0:
-            # Peak is in allowed region but not near any landmark
-            peak_outside_landmarks += 1
+            rejected_no_landmark_indices.append(cell)
             continue
         
-        # If multiple landmark windows contain peaks, choose highest response
+        # Choose highest response if multiple windows
         preferred_lm_idx, preferred_response = max(landmark_peaks, key=lambda x: x[1])
         
-        # Calculate preference strength (difference from mean of other landmarks)
+        # Calculate preference strength
         other_responses = [landmark_responses[cell, i] for i in range(n_landmarks) if i != preferred_lm_idx]
         if len(other_responses) > 0:
             pref_strength = preferred_response - np.mean(other_responses)
         else:
             pref_strength = preferred_response
         
-        # Store results
+        # Store results - this cell is VALID
         preferred_landmark[cell] = preferred_lm_idx
         preference_strength[cell] = pref_strength
-        peak_positions[cell] = peak_pos
         valid_cells[cell] = True
     
     # Summary statistics
@@ -168,26 +198,43 @@ def identify_landmark_responses(normalized_spatial_activity, bin_centers,
     print(f"\n=== VALIDATION SUMMARY ===")
     print(f"Total cells: {n_cells}")
     print(f"Valid cells with landmark preference: {n_valid} ({n_valid/n_cells*100:.1f}%)")
-    print(f"Rejected - no peak in allowed region: {no_peak_in_allowed}")
-    print(f"Rejected - peak outside landmark windows: {peak_outside_landmarks}")
-    print(f"Rejected - peak only in boundary: {peak_only_in_boundary}")
+    print(f"\nRejection breakdown:")
+    print(f"  - Zero activity: {len(rejected_zero_indices)}")
+    print(f"  - Onset response (first {exclude_first_bins} bins): {len(rejected_onset_indices)}")
+    print(f"  - Reward/tunnel response (last {exclude_last_bins} bins): {len(rejected_reward_indices)}")
+    print(f"  - Peak outside landmark windows: {len(rejected_no_landmark_indices)}")
     
     # Count cells per landmark
+    print(f"\nLandmark preference distribution:")
     for lm_idx in range(n_landmarks):
         n_pref = np.sum(preferred_landmark[valid_cells] == lm_idx)
-        print(f"Cells preferring Landmark {lm_idx+1} ({landmark_positions[lm_idx]} cm): {n_pref} ({n_pref/n_valid*100:.1f}%)")
+        pct = n_pref/n_valid*100 if n_valid > 0 else 0
+        print(f"  Landmark {lm_idx+1} ({landmark_positions[lm_idx]} cm): {n_pref} ({pct:.1f}%)")
     
     results = {
         'preferred_landmark': preferred_landmark,
         'landmark_responses': landmark_responses,
         'preference_strength': preference_strength,
         'peak_positions': peak_positions,
+        'global_peak_bins': global_peak_bins,
         'valid_cells': valid_cells,
         'mean_profiles': mean_profiles,
         'landmark_positions': np.array(landmark_positions),
         'landmark_windows': landmark_windows,
+        # NEW: Rejected cell tracking
+        'rejected_cells': {
+            'onset': np.array(rejected_onset_indices),
+            'reward': np.array(rejected_reward_indices),
+            'no_landmark': np.array(rejected_no_landmark_indices),
+            'zero_activity': np.array(rejected_zero_indices)
+        },
         'parameters': {
+            'landmark_windows_config': landmark_windows_config,
             'landmark_window': landmark_window,
+            'exclude_first_bins': exclude_first_bins,
+            'exclude_last_bins': exclude_last_bins,
+            'onset_threshold_cm': onset_threshold_cm,
+            'end_threshold_cm': end_threshold_cm,
             'boundary_exclusion': boundary_exclusion,
             'min_allowed': min_allowed,
             'max_allowed': max_allowed,
@@ -199,6 +246,397 @@ def identify_landmark_responses(normalized_spatial_activity, bin_centers,
     
     return results
 
+def plot_cells_by_landmark_assignment(landmark_results, bin_centers,
+                                       landmark_positions=[25, 55, 85, 115],
+                                       trim_start_bins=5, trim_end_bins=5,
+                                       save_path=None):
+    """
+    Create response plots for cells assigned to each landmark.
+    Shows one panel per landmark with all cells preferring that landmark.
+    
+    This helps verify that landmark assignment is working correctly -
+    cells assigned to L1 should have peaks near L1, etc.
+    
+    Parameters:
+    -----------
+    landmark_results : dict
+        Results from identify_landmark_responses()
+    bin_centers : numpy.ndarray
+        Spatial bin centers
+    landmark_positions : list
+        Positions of landmarks in cm
+    trim_start_bins : int
+        Number of bins to trim from display start
+    trim_end_bins : int
+        Number of bins to trim from display end
+    save_path : str, optional
+        Directory to save figure
+    
+    Returns:
+    --------
+    fig : matplotlib.figure.Figure
+    """
+    from matplotlib.colors import LinearSegmentedColormap
+    
+    mean_profiles = landmark_results['mean_profiles']
+    preferred_landmark = landmark_results['preferred_landmark']
+    valid_cells = landmark_results['valid_cells']
+    landmark_windows = landmark_results['landmark_windows']
+    n_landmarks = len(landmark_positions)
+    
+    # Define trim region
+    n_bins = len(bin_centers)
+    valid_start = trim_start_bins
+    valid_end = n_bins - trim_end_bins if trim_end_bins > 0 else n_bins
+    trimmed_bin_centers = bin_centers[valid_start:valid_end]
+    
+    # Colormap
+    cmap = LinearSegmentedColormap.from_list('EnhancedBlues', 
+                                           [(1,1,1), (0.8,0.8,1), (0.4,0.4,0.9), (0,0,0.8), (0,0,0.5)])
+    
+    # Create figure - one column per landmark
+    fig, axes = plt.subplots(1, n_landmarks, figsize=(5*n_landmarks, 8))
+    
+    if n_landmarks == 1:
+        axes = [axes]
+    
+    for lm_idx in range(n_landmarks):
+        ax = axes[lm_idx]
+        
+        # Get cells assigned to this landmark
+        lm_cell_mask = valid_cells & (preferred_landmark == lm_idx)
+        lm_cell_indices = np.where(lm_cell_mask)[0]
+        
+        if len(lm_cell_indices) == 0:
+            ax.text(0.5, 0.5, f'No cells assigned to\nLandmark {lm_idx+1}', 
+                   ha='center', va='center', transform=ax.transAxes, fontsize=12)
+            ax.set_title(f'Landmark {lm_idx+1} ({landmark_positions[lm_idx]} cm)\n(n=0)')
+            continue
+        
+        # Get activity for these cells
+        cell_activity = mean_profiles[lm_cell_indices]
+        
+        # Trim for display
+        trimmed_activity = cell_activity[:, valid_start:valid_end]
+        
+        # Find peak in trimmed region for sorting
+        peak_locations = np.argmax(trimmed_activity, axis=1)
+        sorted_indices = np.argsort(peak_locations)
+        sorted_activity = trimmed_activity[sorted_indices]
+        
+        # Normalize each cell (0-1)
+        sorted_activity_norm = np.zeros_like(sorted_activity)
+        for i in range(len(sorted_activity)):
+            cell_min = np.min(sorted_activity[i])
+            cell_max = np.max(sorted_activity[i])
+            if cell_max > cell_min:
+                sorted_activity_norm[i] = (sorted_activity[i] - cell_min) / (cell_max - cell_min)
+            else:
+                sorted_activity_norm[i] = sorted_activity[i]
+        
+        # Plot
+        im = ax.imshow(sorted_activity_norm, aspect='auto', cmap=cmap,
+                      interpolation='nearest', vmin=0, vmax=1)
+        
+        # Add ALL landmark lines (red dashed)
+        for other_lm_pos in landmark_positions:
+            lm_bin = np.argmin(np.abs(trimmed_bin_centers - other_lm_pos))
+            ax.axvline(lm_bin, color='red', linestyle='--', alpha=0.4, linewidth=1)
+        
+        # Highlight THIS landmark's window (green shaded region)
+        lm_min, lm_max = landmark_windows[lm_idx]
+        # Convert to trimmed bin indices
+        lm_min_bin = np.argmin(np.abs(trimmed_bin_centers - lm_min))
+        lm_max_bin = np.argmin(np.abs(trimmed_bin_centers - lm_max))
+        ax.axvspan(lm_min_bin, lm_max_bin, alpha=0.15, color='green', 
+                  label=f'Window [{lm_min:.0f}, {lm_max:.0f}]')
+        
+        # Highlight THIS landmark position (green solid line)
+        this_lm_bin = np.argmin(np.abs(trimmed_bin_centers - landmark_positions[lm_idx]))
+        ax.axvline(this_lm_bin, color='green', linestyle='-', alpha=0.8, linewidth=2)
+        
+        # X-axis labels (position in cm)
+        n_trimmed_bins = len(trimmed_bin_centers)
+        tick_positions = np.linspace(0, n_trimmed_bins-1, 5).astype(int)
+        tick_labels = [f'{trimmed_bin_centers[i]:.0f}' for i in tick_positions]
+        ax.set_xticks(tick_positions)
+        ax.set_xticklabels(tick_labels)
+        
+        ax.set_xlabel('Position (cm)', fontsize=10)
+        ax.set_ylabel('Cell # (sorted by peak)', fontsize=10)
+        ax.set_title(f'Landmark {lm_idx+1} ({landmark_positions[lm_idx]} cm)\n'
+                    f'(n={len(lm_cell_indices)}, window [{lm_min:.0f}, {lm_max:.0f}])', 
+                    fontsize=11, fontweight='bold')
+    
+    plt.suptitle('Cells by Landmark Assignment\n(Green = assigned landmark window, Red dashed = all landmarks)', 
+                fontsize=13, fontweight='bold')
+    plt.tight_layout()
+    
+    if save_path is not None:
+        fig_path = os.path.join(save_path, 'cells_by_landmark_assignment.png')
+        plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+        print(f"  Saved landmark assignment plot: {os.path.basename(fig_path)}")
+    
+    return fig
+
+
+def plot_landmark_assignment_summary(landmark_results, bin_centers,
+                                     landmark_positions=[25, 55, 85, 115],
+                                     save_path=None):
+    """
+    Create a summary plot showing the distribution of peak positions
+    for cells assigned to each landmark.
+    
+    This helps identify if cells are being assigned to the "wrong" landmark
+    (e.g., cells with peaks near L3 being assigned to L2).
+    
+    Parameters:
+    -----------
+    landmark_results : dict
+        Results from identify_landmark_responses()
+    bin_centers : numpy.ndarray
+        Spatial bin centers
+    landmark_positions : list
+        Positions of landmarks in cm
+    save_path : str, optional
+        Directory to save figure
+    """
+    
+    peak_positions = landmark_results['peak_positions']
+    preferred_landmark = landmark_results['preferred_landmark']
+    valid_cells = landmark_results['valid_cells']
+    landmark_windows = landmark_results['landmark_windows']
+    n_landmarks = len(landmark_positions)
+    
+    # Create figure
+    fig, axes = plt.subplots(2, 1, figsize=(12, 8))
+    
+    # Colors for each landmark
+    colors = plt.cm.Set1(np.linspace(0, 1, n_landmarks))
+    
+    # =========================================================================
+    # Panel 1: Histogram of peak positions, colored by landmark assignment
+    # =========================================================================
+    ax1 = axes[0]
+    
+    bin_edges = np.linspace(0, np.max(bin_centers), 50)
+    
+    for lm_idx in range(n_landmarks):
+        lm_cell_mask = valid_cells & (preferred_landmark == lm_idx)
+        lm_peaks = peak_positions[lm_cell_mask]
+        
+        if len(lm_peaks) > 0:
+            ax1.hist(lm_peaks, bins=bin_edges, alpha=0.5, color=colors[lm_idx],
+                    label=f'L{lm_idx+1} ({landmark_positions[lm_idx]}cm): n={len(lm_peaks)}',
+                    edgecolor='black', linewidth=0.5)
+    
+    # Add landmark position markers
+    for lm_idx, lm_pos in enumerate(landmark_positions):
+        ax1.axvline(lm_pos, color=colors[lm_idx], linestyle='--', linewidth=2, alpha=0.8)
+    
+    # Add window boundaries (light gray)
+    for lm_min, lm_max in landmark_windows:
+        ax1.axvline(lm_min, color='gray', linestyle=':', linewidth=1, alpha=0.5)
+        ax1.axvline(lm_max, color='gray', linestyle=':', linewidth=1, alpha=0.5)
+    
+    ax1.set_xlabel('Peak Position (cm)', fontsize=11)
+    ax1.set_ylabel('Number of Cells', fontsize=11)
+    ax1.set_title('Distribution of Peak Positions by Landmark Assignment', fontsize=12, fontweight='bold')
+    ax1.legend(loc='upper right')
+    ax1.set_xlim(0, np.max(bin_centers))
+    
+    # =========================================================================
+    # Panel 2: Box plot of peak positions for each landmark
+    # =========================================================================
+    ax2 = axes[1]
+    
+    peak_data = []
+    labels = []
+    
+    for lm_idx in range(n_landmarks):
+        lm_cell_mask = valid_cells & (preferred_landmark == lm_idx)
+        lm_peaks = peak_positions[lm_cell_mask]
+        
+        if len(lm_peaks) > 0:
+            peak_data.append(lm_peaks)
+            labels.append(f'L{lm_idx+1}\n({landmark_positions[lm_idx]}cm)')
+    
+    if len(peak_data) > 0:
+        bp = ax2.boxplot(peak_data, labels=labels, patch_artist=True)
+        
+        # Color the boxes
+        for patch, color in zip(bp['boxes'], colors[:len(peak_data)]):
+            patch.set_facecolor(color)
+            patch.set_alpha(0.5)
+        
+        # Add landmark position reference lines
+        for lm_idx, lm_pos in enumerate(landmark_positions):
+            ax2.axhline(lm_pos, color=colors[lm_idx], linestyle='--', linewidth=1.5, alpha=0.6)
+        
+        # Add window boundaries
+        for lm_idx, (lm_min, lm_max) in enumerate(landmark_windows):
+            ax2.axhspan(lm_min, lm_max, alpha=0.1, color=colors[lm_idx])
+    
+    ax2.set_ylabel('Peak Position (cm)', fontsize=11)
+    ax2.set_xlabel('Assigned Landmark', fontsize=11)
+    ax2.set_title('Peak Position Distribution by Landmark (boxes show window boundaries)', 
+                 fontsize=12, fontweight='bold')
+    
+    plt.tight_layout()
+    
+    if save_path is not None:
+        fig_path = os.path.join(save_path, 'landmark_assignment_summary.png')
+        plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+        print(f"  Saved assignment summary: {os.path.basename(fig_path)}")
+    
+    return fig
+
+# ============================================================================
+# NEW: VISUALIZATION OF REJECTED CELLS
+# ============================================================================
+
+def plot_rejected_cells_response(landmark_results, bin_centers, 
+                                 landmark_positions=[25, 55, 85, 115],
+                                 trim_start_bins=0, trim_end_bins=0,
+                                 save_path=None):
+    """
+    Create response plots for cells that were rejected from landmark analysis.
+    Shows separate panels for onset-responding, reward-responding, and no-landmark cells.
+    
+    Parameters:
+    -----------
+    landmark_results : dict
+        Results from identify_landmark_responses()
+    bin_centers : numpy.ndarray
+        Spatial bin centers
+    landmark_positions : list
+        Positions of landmarks in cm
+    trim_start_bins : int
+        Number of bins to trim from display start
+    trim_end_bins : int
+        Number of bins to trim from display end
+    save_path : str, optional
+        Directory to save figure
+    
+    Returns:
+    --------
+    fig : matplotlib.figure.Figure
+    """
+    from matplotlib.colors import LinearSegmentedColormap
+    
+    mean_profiles = landmark_results['mean_profiles']
+    rejected = landmark_results['rejected_cells']
+    params = landmark_results['parameters']
+    
+    # Define trim region
+    n_bins = len(bin_centers)
+    valid_start = trim_start_bins
+    valid_end = n_bins - trim_end_bins if trim_end_bins > 0 else n_bins
+    trimmed_bin_centers = bin_centers[valid_start:valid_end]
+    
+    # Categories to plot
+    categories = [
+        ('onset', 'Onset-Responding Cells', rejected['onset']),
+        ('reward', 'Reward/Tunnel-Responding Cells', rejected['reward']),
+        ('no_landmark', 'No Landmark Preference (Between Landmarks)', rejected['no_landmark'])
+    ]
+    
+    # Filter out empty categories
+    categories = [(name, title, indices) for name, title, indices in categories if len(indices) > 0]
+    
+    if len(categories) == 0:
+        print("No rejected cells to visualize")
+        return None
+    
+    # Create figure
+    n_categories = len(categories)
+    fig, axes = plt.subplots(1, n_categories, figsize=(6*n_categories, 8))
+    
+    if n_categories == 1:
+        axes = [axes]
+    
+    # Colormap
+    cmap = LinearSegmentedColormap.from_list('EnhancedBlues', 
+                                           [(1,1,1), (0.8,0.8,1), (0.4,0.4,0.9), (0,0,0.8), (0,0,0.5)])
+    
+    for ax_idx, (cat_name, cat_title, cell_indices) in enumerate(categories):
+        ax = axes[ax_idx]
+        
+        if len(cell_indices) == 0:
+            ax.text(0.5, 0.5, 'No cells', ha='center', va='center',
+                   transform=ax.transAxes, fontsize=12)
+            ax.set_title(cat_title)
+            continue
+        
+        # Get activity for these cells
+        cell_activity = mean_profiles[cell_indices]
+        
+        # Trim for display
+        trimmed_activity = cell_activity[:, valid_start:valid_end]
+        
+        # Find peak in trimmed region for sorting
+        peak_locations = np.argmax(trimmed_activity, axis=1)
+        sorted_indices = np.argsort(peak_locations)
+        sorted_activity = trimmed_activity[sorted_indices]
+        
+        # Normalize each cell (0-1)
+        sorted_activity_norm = np.zeros_like(sorted_activity)
+        for i in range(len(sorted_activity)):
+            cell_min = np.min(sorted_activity[i])
+            cell_max = np.max(sorted_activity[i])
+            if cell_max > cell_min:
+                sorted_activity_norm[i] = (sorted_activity[i] - cell_min) / (cell_max - cell_min)
+            else:
+                sorted_activity_norm[i] = sorted_activity[i]
+        
+        # Plot
+        im = ax.imshow(sorted_activity_norm, aspect='auto', cmap=cmap,
+                      interpolation='nearest', vmin=0, vmax=1)
+        
+        # Add landmark lines
+        for lm_pos in landmark_positions:
+            lm_bin = np.argmin(np.abs(trimmed_bin_centers - lm_pos))
+            ax.axvline(lm_bin, color='red', linestyle='--', alpha=0.5, linewidth=1)
+        
+        # Add exclusion zone markers
+        if cat_name == 'onset':
+            # Show onset threshold
+            onset_cm = params['onset_threshold_cm']
+            if onset_cm > trimmed_bin_centers[0]:
+                onset_bin = np.argmin(np.abs(trimmed_bin_centers - onset_cm))
+                ax.axvline(onset_bin, color='orange', linestyle='-', alpha=0.8, linewidth=2, 
+                          label=f'Onset threshold ({onset_cm:.0f}cm)')
+        elif cat_name == 'reward':
+            # Show end threshold
+            end_cm = params['end_threshold_cm']
+            if end_cm < trimmed_bin_centers[-1]:
+                end_bin = np.argmin(np.abs(trimmed_bin_centers - end_cm))
+                ax.axvline(end_bin, color='orange', linestyle='-', alpha=0.8, linewidth=2,
+                          label=f'End threshold ({end_cm:.0f}cm)')
+        
+        # X-axis labels (position in cm)
+        n_trimmed_bins = len(trimmed_bin_centers)
+        tick_positions = np.linspace(0, n_trimmed_bins-1, 5).astype(int)
+        tick_labels = [f'{trimmed_bin_centers[i]:.0f}' for i in tick_positions]
+        ax.set_xticks(tick_positions)
+        ax.set_xticklabels(tick_labels)
+        
+        ax.set_xlabel('Position (cm)', fontsize=10)
+        ax.set_ylabel('Cell # (sorted by peak)', fontsize=10)
+        ax.set_title(f'{cat_title}\n(n={len(cell_indices)})', fontsize=11, fontweight='bold')
+        
+        if cat_name in ['onset', 'reward']:
+            ax.legend(loc='upper right', fontsize=8)
+    
+    plt.suptitle('Rejected Cells - Response Profiles', fontsize=14, fontweight='bold')
+    plt.tight_layout()
+    
+    if save_path is not None:
+        fig_path = os.path.join(save_path, 'rejected_cells_response_plots.png')
+        plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+        print(f"  Saved rejected cells plot: {os.path.basename(fig_path)}")
+    
+    return fig
 
 # ============================================================================
 # PHASE 2: LAYER-SPECIFIC LANDMARK PREFERENCE ANALYSIS
@@ -734,15 +1172,31 @@ def plot_example_cells_by_landmark(normalized_spatial_activity, bin_centers,
 # ============================================================================
 # MAIN WORKFLOW FUNCTION
 # ============================================================================
+# Update the run_landmark_analysis function signature and Phase 1 call:
+
 def run_landmark_analysis(normalized_spatial_activity, bin_centers, layer_cells,
                          reliable_valid_cells, landmark_positions=[30, 60, 90, 120],
-                         landmark_window=7.0, boundary_exclusion=(10, 10),
+                         landmark_windows_config=None,  # NEW: per-landmark config
+                         landmark_window=10.0,  # fallback
+                         boundary_exclusion=(10, 10),
+                         exclude_first_bins=5, exclude_last_bins=5,
                          trials_per_block=30, smoothing_sigma=1.0,
                          save_path=None, session_id=None, date_str=None):
     """
     Complete workflow for landmark preference analysis.
-    """
     
+    NEW PARAMETER:
+    --------------
+    landmark_windows_config : list of dict, optional
+        Per-landmark window configuration. Example:
+        [
+            {'before': 10, 'after': 10},  # L1
+            {'before': 15, 'after': 10},  # L2
+            {'before': 15, 'after': 10},  # L3
+            {'before': 15, 'after': 5},   # L4
+        ]
+    """
+
     print("\n" + "="*70)
     print("LANDMARK PREFERENCE ANALYSIS - COMPLETE WORKFLOW")
     print("="*70)
@@ -754,9 +1208,12 @@ def run_landmark_analysis(normalized_spatial_activity, bin_centers, layer_cells,
     
     landmark_results = identify_landmark_responses(
         normalized_spatial_activity, bin_centers, landmark_positions,
+        landmark_windows_config=landmark_windows_config,  # NEW
         landmark_window=landmark_window,
         boundary_exclusion=boundary_exclusion,
-        smoothing_sigma=smoothing_sigma
+        smoothing_sigma=smoothing_sigma,
+        exclude_first_bins=exclude_first_bins,
+        exclude_last_bins=exclude_last_bins
     )
     
     # Phase 2: Layer-specific analysis (full session)
@@ -787,26 +1244,25 @@ def run_landmark_analysis(normalized_spatial_activity, bin_centers, layer_cells,
     print("PHASE 4: CREATING VISUALIZATIONS")
     print("-"*70)
     
-    # CRITICAL FIX: save_path is a directory, extract it properly for saving figures
     if save_path is not None:
-        save_dir = save_path  # save_path is already a directory
+        save_dir = save_path
         h5_save_path = os.path.join(save_dir, f"{session_id}_landmark_preferences.h5")
     else:
         save_dir = None
         h5_save_path = None
     
-    # Create visualizations (pass save_dir for figures)
+    # Create visualizations
     fig_heatmap = plot_layer_landmark_heatmap(
         layer_results, landmark_positions,
         title=f"Landmark Preferences by Layer - {session_id if session_id else 'Session'}",
-        save_path=save_dir  # Pass directory, not h5 path
+        save_path=save_dir
     )
     
     if dynamics_results is not None:
         fig_dynamics = plot_within_session_dynamics(
             dynamics_results,
             title=f"Within-Session Dynamics - {session_id if session_id else 'Session'}",
-            save_path=save_dir  # Pass directory, not h5 path
+            save_path=save_dir
         )
     else:
         fig_dynamics = None
@@ -815,10 +1271,39 @@ def run_landmark_analysis(normalized_spatial_activity, bin_centers, layer_cells,
         normalized_spatial_activity, bin_centers,
         landmark_results, layer_results,
         landmark_positions, n_examples=2,
-        save_path=save_dir  # Pass directory, not h5 path
+        save_path=save_dir
     )
     
-    plt.show()  # Show all figures
+    # NEW: Visualize rejected cells
+    print("\n  Creating rejected cells visualization...")
+    fig_rejected = plot_rejected_cells_response(
+        landmark_results, bin_centers,
+        landmark_positions=landmark_positions,
+        trim_start_bins=exclude_first_bins,  # Match exclusion params
+        trim_end_bins=exclude_last_bins,
+        save_path=save_dir
+    )
+    # In Phase 4, after the existing visualizations:
+
+    # NEW: Visualize cells by landmark assignment
+    print("\n  Creating landmark assignment visualization...")
+    fig_by_landmark = plot_cells_by_landmark_assignment(
+        landmark_results, bin_centers,
+        landmark_positions=landmark_positions,
+        trim_start_bins=exclude_first_bins,
+        trim_end_bins=exclude_last_bins,
+        save_path=save_dir
+    )
+
+    # NEW: Summary statistics of landmark assignment
+    print("\n  Creating landmark assignment summary...")
+    fig_assignment_summary = plot_landmark_assignment_summary(
+        landmark_results, bin_centers,
+        landmark_positions=landmark_positions,
+        save_path=save_dir
+    )
+
+    plt.show()
     
     # Phase 5: Save HDF5 data
     if h5_save_path is not None and session_id is not None:
@@ -839,7 +1324,10 @@ def run_landmark_analysis(normalized_spatial_activity, bin_centers, layer_cells,
         'figures': {
             'heatmap': fig_heatmap,
             'dynamics': fig_dynamics,
-            'examples': fig_examples
+            'examples': fig_examples,
+            'rejected': fig_rejected,
+            'by_landmark': fig_by_landmark,        # NEW
+            'assignment_summary': fig_assignment_summary  # NEW
         }
     }
     
@@ -867,7 +1355,8 @@ if __name__ == "__main__":
     """
     
     # EXAMPLE: Load your data
-    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251030_JSY_JSY054_SpMod_Day1\TSeries-10302025-1512-001"
+    
+    data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251030_JSY_JSY054_SpMod_Day1\TSeries-10302025-1512-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251031_JSY_JSY054_SpMod_Day2\TSeries-10312025-1751-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251101_JSY_JSY054_SpMod_Day3\TSeries-11012025-1725-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251102_JSY_JSY054_SpMod_Day4\TSeries-11022025-1642-001"
@@ -879,12 +1368,46 @@ if __name__ == "__main__":
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251010_JSY_JSY052_SpatialModulation_Day2\TSeries-10102025-0916-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251011_JSY_JSY052_SpatialModulation_Day3\TSeries-10112025-1441-002"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-001"
-    data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251013_JSY_JSY052_SpatialModulation_Day5\TSeries-10132025-1236-001"
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251013_JSY_JSY052_SpatialModulation_Day5\TSeries-10132025-1236-001"
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251014_JSY_JSY052_SpatialModulation_Day6\TSeries-10142025-1647-003"
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251015_JSY_JSY052_SpatialModulation_Day7\TSeries-10152025-1103-001'
 
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1_togetherregistration\TSeries-09062025-1308-001"
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1_togetherregistration\TSeries-09062025-1308-002"
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2_togetherregistration\TSeries-09072025-1257-001"
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2_togetherregistration\TSeries-09072025-1257-002"
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_togetherregistration\TSeries-09082025-1540-001"
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_togetherregistration\TSeries-09082025-1540-002"
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250909_JSY_JSY044_SpatialModulation_Day4\TSeries-09092025-1256-001'
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250909_JSY_JSY044_SpatialModulation_Day4\TSeries-09092025-1256-002'
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250910_JSY_JSY044_SpatialModulation_Day5\TSeries-09102025-1340-001'
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250910_JSY_JSY044_SpatialModulation_Day5\TSeries-09102025-1340-002'
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250911_JSY_JSY044_SpatialModulation_Day6\TSeries-09112025-1414-001'
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250911_JSY_JSY044_SpatialModulation_Day6\TSeries-09112025-1414-002'
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250912_JSY_JSY044_SpatialModulation_Day7\TSeries-09122025-1334-001'
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250912_JSY_JSY044_SpatialModulation_Day7\TSeries-09122025-1334-002'
+
+
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251101_JSY_JSY051_SpMod_Day1\TSeries-11012025-1725-001"
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251102_JSY_JSY051_SpMod_Day2\TSeries-11022025-1642-001"
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251103_JSY_JSY051_SpMod_Day3\TSeries-11032025-1715-001"
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251104_JSY_JSY051_SpMod_Day4\TSeries-11042025-1418-001"
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251105_JSY_JSY051_SpMod_Day5\TSeries-11052025-1512-002"
+    
+
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250616_JSY_JSY041_SpatialModulation_Day1_V1Prism\TSeries-06162025-1521-001'
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250618_JSY_JSY041_SpatialModulation_Day3_V1Prism\TSeries-06182025-1641-001'
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250620_JSY_JSY041_SpatialModulation_Day5_V1Prism\TSeries-06202025-1515-001'
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250622_JSY_JSY041_SpatialModulation_Day7_V1Prism\TSeries-06222025-1550-001'
+    
+    
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\250620_JSY_JSY040_SpatialModulation_Day1_V1Prism\TSeries-06202025-1515-001'
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\250622_JSY_JSY040_SpatialModulation_Day3_V1Prism\TSeries-06222025-1550-001'
+    
     preproc_files = glob.glob(os.path.join(data_filepath, "*preproc.h5"))
     if not preproc_files:
         raise ValueError(f"No preprocessed .h5 file found in {data_filepath}")
-    
+    #
     preproc_file = preproc_files[0]
     print(f"Loading: {os.path.basename(preproc_file)}")
     preproc_data = files.read_h5(preproc_file)
@@ -911,20 +1434,44 @@ if __name__ == "__main__":
     # Get layer information (from your SMI calculation script)
     layer_cells, layer_boundaries = SMI_Layer.identify_layers(med_coords)
     
-    # Run the analysis
+    # find session_id in data_filepath (it is day2 in 'D:\\V1_SpatialModulation\\2p\\V1_prism\\JSY054_ChronicImaging\\251030_JSY_JSY054_SpMod_Day1\\TSeries-10302025-1512-001')
+    session_folder = os.path.basename(os.path.dirname(data_filepath))
+    
+    # Extract date (6 digits at the start) and session ID (DayX), Pattern: YYMMDD_JSY_JSYXXX_SpMod_DayX
+    match = re.match(r'(\d{6})_.*_(Day\d+)', session_folder)
+    
+    date_str = match.group(1)
+    session_id = match.group(2)
+
+    # Define per-landmark window configuration
+    # L1 (25cm): constrained before (close to onset zone)
+    # L2 (55cm): full asymmetric
+    # L3 (85cm): full asymmetric  
+    # L4 (115cm): constrained after (close to corridor end)
+    landmark_windows_config = [
+        {'before': 15, 'after': 10},  # L1 at 25cm: [10, 35]
+        {'before': 20, 'after': 10},  # L2 at 55cm: [35, 65]
+        {'before': 20, 'after': 10},  # L3 at 85cm: [65, 95]
+        {'before': 20, 'after': 10},  # L4 at 115cm: [95, 125]
+    ]
+
+    # Run landmark analysis
     results = run_landmark_analysis(
         normalized_spatial_activity=normalized_spatial_activity,
         bin_centers=bin_centers,
         layer_cells=layer_cells,
         reliable_valid_cells=reliable_valid_cells,
-        landmark_positions=[30, 60, 90, 120],
-        landmark_window=10.0,
-        boundary_exclusion=(10, 10),
+        landmark_positions=[25, 55, 85, 115],
+        landmark_windows_config=landmark_windows_config,  # NEW
+        landmark_window=10.0,  # fallback (not used if config provided)
+        boundary_exclusion=(5, 5),
+        exclude_first_bins=5,
+        exclude_last_bins=5,
         trials_per_block=20,
         smoothing_sigma=1.0,
         save_path=data_filepath,
-        session_id="Day5",
-        date_str="251013"
+        session_id=session_id,
+        date_str=date_str
     )
     
     print("\n" + "="*70)
