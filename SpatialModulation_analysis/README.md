@@ -1,35 +1,24 @@
-# V1_SpatialModulation
+# Spatial Modulation Analysis Pipeline
 
-Scripts for analyzing spatial modulation responses in mouse V1 during virtual reality navigation tasks.
-
-**Author:** JSY | **Last Updated:** December 2025
-
----
-
-## Quick Setup
-
-```bash
-# Install conda environment
-conda env create -f environment.yml
-conda activate JSY_SpatialMod
-
-# Install twopTools module (run from repository root)
-pip install -e .
-```
+**Project:** V1_SpatialModulation
+**Location:** `SpatialModulation_analysis/`
+**Author:** JSY
+**Last Updated:** December 2025
 
 ---
 
 ## Table of Contents
-- [Analysis Overview](#analysis-overview)
+- [Overview](#overview)
 - [Pipeline Workflows](#pipeline-workflows)
-- [Quick Start](#quick-start)
 - [File Reference](#file-reference)
+- [Data Flow Diagrams](#data-flow-diagrams)
+- [Quick Start Guide](#quick-start-guide)
 
 ---
 
-## Analysis Overview
+## Overview
 
-Four main analysis pipelines in `SpatialModulation_analysis/`:
+This directory contains analysis scripts for investigating spatial modulation in mouse V1 during navigation tasks. Main analysis categories:
 1. **SMI (Spatial Modulation Index)** - Quantify place-cell-like activity
 2. **Landmark Preference** - Identify landmark-responsive cells
 3. **Speed Modulation** - Analyze speed tuning properties
@@ -376,5 +365,3 @@ python PCA_Interpretation.py       # Step 5
 
 **Author:** JSY
 **Project Repository:** `c:\Users\jasmineyeo\Documents\GitHub\V1_SpatialModulation\`
-
-
