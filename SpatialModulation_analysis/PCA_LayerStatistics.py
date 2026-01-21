@@ -345,7 +345,6 @@ def plot_layer_summary(classification_results, stats_results, save_path=None):
     for i, pct in enumerate(proportions_adapt):
         ax2.text(i, pct/2, f'{pct:.0f}%', ha='center', va='center', 
                 fontsize=10, fontweight='bold', color='white')
-    
     # =========================================================================
     # Panel 3: Superficial vs Deep comparison
     # =========================================================================
@@ -354,40 +353,62 @@ def plot_layer_summary(classification_results, stats_results, save_path=None):
     sup_pct = stats_results['superficial_vs_deep']['superficial_pct']
     deep_pct = stats_results['superficial_vs_deep']['deep_pct']
     fisher_p = stats_results['superficial_vs_deep']['fisher_p']
+    odds_ratio = stats_results['superficial_vs_deep']['odds_ratio']
     
     groups = ['Superficial\n(L2/3 + L4)', 'Deep\n(L5 + L6)']
     adapt_pcts = [sup_pct, deep_pct]
     spatial_pcts = [100 - sup_pct, 100 - deep_pct]
     
     x_groups = np.arange(2)
-    ax3.bar(x_groups, adapt_pcts, width, label='Adaptation-like', color=adapt_color, alpha=0.8)
-    ax3.bar(x_groups, spatial_pcts, width, bottom=adapt_pcts, label='Spatial-like', 
-            color=spatial_color, alpha=0.8)
+    width = 0.6
+    
+    bars1 = ax3.bar(x_groups, adapt_pcts, width, label='Adaptation-like', 
+                    color=adapt_color, alpha=0.8)
+    bars2 = ax3.bar(x_groups, spatial_pcts, width, bottom=adapt_pcts, 
+                    label='Spatial-like', color=spatial_color, alpha=0.8)
     
     ax3.set_xticks(x_groups)
     ax3.set_xticklabels(groups)
     ax3.set_ylabel('Proportion (%)', fontsize=11)
     ax3.set_title('Superficial vs Deep Layers', fontsize=12, fontweight='bold')
     ax3.axhline(50, color='black', linestyle='--', alpha=0.5)
-    ax3.set_ylim(0, 100)
+    ax3.set_ylim(0, 110)  # Increased to make room for significance annotation
     
-    # Add significance annotation
-    sig_str = f"Fisher's p = {fisher_p:.3e}"
-    if fisher_p < 0.001:
-        sig_str += " ***"
-    elif fisher_p < 0.01:
-        sig_str += " **"
-    elif fisher_p < 0.05:
-        sig_str += " *"
-    
-    ax3.text(0.5, 95, sig_str, ha='center', va='top', fontsize=10, 
-            transform=ax3.get_xaxis_transform())
-    
-    # Add percentage labels
+    # Add percentage labels on bars
     for i, pct in enumerate(adapt_pcts):
         ax3.text(i, pct/2, f'{pct:.1f}%', ha='center', va='center', 
                 fontsize=11, fontweight='bold', color='white')
     
+    # Add significance bracket and p-value
+    y_max = max(adapt_pcts + spatial_pcts)
+    bracket_y = y_max + 3
+    
+    # Draw bracket
+    ax3.plot([0, 0], [bracket_y, bracket_y + 2], 'k-', linewidth=1.5)
+    ax3.plot([1, 1], [bracket_y, bracket_y + 2], 'k-', linewidth=1.5)
+    ax3.plot([0, 1], [bracket_y + 2, bracket_y + 2], 'k-', linewidth=1.5)
+    
+    # Add significance stars
+    if fisher_p < 0.001:
+        sig_stars = '***'
+    elif fisher_p < 0.01:
+        sig_stars = '**'
+    elif fisher_p < 0.05:
+        sig_stars = '*'
+    else:
+        sig_stars = 'ns'
+    
+    # P-value text with stars
+    ax3.text(0.5, bracket_y + 3.5, sig_stars, ha='center', va='bottom', 
+            fontsize=14, fontweight='bold')
+    ax3.text(0.5, bracket_y + 6.5, f'p = {fisher_p:.4f}', ha='center', va='bottom', 
+            fontsize=9)
+    
+    # Add additional stats in text box
+    stats_text = f'OR = {odds_ratio:.3f}\nΔ = {deep_pct - sup_pct:+.1f}pp'
+    ax3.text(0.98, 0.02, stats_text, transform=ax3.transAxes,
+            fontsize=8, ha='right', va='bottom',
+            bbox=dict(boxstyle='round', facecolor='white', alpha=0.8, edgecolor='gray'))
     # =========================================================================
     # Panel 4: PC2 distribution by layer (PC2 = adaptation axis)
     # =========================================================================
@@ -475,13 +496,19 @@ def plot_layer_summary(classification_results, stats_results, save_path=None):
     # =========================================================================
     plt.suptitle('Layer Distribution of L1 Cell Types\n(Adaptation-like vs Spatial-like)', 
                 fontsize=14, fontweight='bold', y=1.02)
-    
     plt.tight_layout()
-    
+        
+    # Always save the figure
     if save_path:
         os.makedirs(os.path.dirname(save_path), exist_ok=True)
-        plt.savefig(save_path, dpi=200, bbox_inches='tight')
+        plt.savefig(save_path, dpi=300, bbox_inches='tight')  # Increased DPI
         print(f"\n✓ Saved layer summary figure: {save_path}")
+    else:
+        # Default save path if none provided
+        default_path = os.path.join(FIGURE_DIR, 'layer_effect_summary.png')
+        os.makedirs(FIGURE_DIR, exist_ok=True)
+        plt.savefig(default_path, dpi=300, bbox_inches='tight')
+        print(f"\n✓ Saved layer summary figure: {default_path}")
     
     return fig
 

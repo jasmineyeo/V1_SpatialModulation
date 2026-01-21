@@ -31,8 +31,8 @@ import seaborn as sns
 # CONFIGURATION
 # ============================================================================
 
-PCA_DATA_PATH = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\PCA\JSY054_pca_data.h5"
-FIGURE_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\PCA\figures\comprehensive"
+PCA_DATA_PATH = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\PCA\JSY052_pca_data.h5"
+FIGURE_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\PCA\figures\comprehensive"
 
 # Landmark positions
 LANDMARK_POSITIONS = [25, 55, 85, 115]

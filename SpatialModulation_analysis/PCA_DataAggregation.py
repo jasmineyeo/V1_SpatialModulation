@@ -17,6 +17,7 @@ import re
 import glob
 import numpy as np
 import h5py
+from scipy.interpolate import interp1d
 from datetime import datetime
 from scipy.ndimage import gaussian_filter1d
 
@@ -29,13 +30,13 @@ from helper.SpatialModulationIndexLayerSpecific import SpatialModulationIndexLay
 # ============================================================================
 
 # Animal to analyze
-ANIMAL_ID = "JSY051"
+ANIMAL_ID = "JSY052"
 
 # Base directory containing all session folders for this animal
-BASE_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging"
+BASE_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging"
 
 # Output directory for PCA data file
-OUTPUT_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\PCA"
+OUTPUT_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\PCA"
 
 # Landmark configuration (must match your landmark analysis)
 LANDMARK_POSITIONS = [25, 55, 85, 115]  # cm
@@ -215,44 +216,87 @@ def assign_landmark_preference(peak_positions, landmark_positions, landmark_wind
     
     return preferred_landmark
 
-
-def assign_layer_labels(med_coords, layer_cells):
+def assign_layer_labels_and_depths(med_coords, layer_cells):
     """
-    Convert layer_cells dict to per-cell layer labels.
+    Convert layer_cells dict to per-cell layer labels AND extract depths.
+    
+    Parameters:
+    -----------
+    med_coords : list of tuples
+        Median coordinates for each cell (x, y) where y is depth
+    layer_cells : dict
+        Dictionary mapping layer names to cell indices
     
     Returns:
     --------
     layer_labels : array of strings
+        Layer label for each cell
+    cell_depths : array of floats
+        Y-coordinate (depth) for each cell
     """
     n_cells = len(med_coords)
     layer_labels = np.array(['Unknown'] * n_cells, dtype='U10')
+    
+    # Extract Y-coordinates (depth) from med_coords
+    # med_coords is a list of tuples like [(x1, y1), (x2, y2), ...]
+    cell_depths = np.array([coord[1] for coord in med_coords], dtype=float)
     
     for layer_name, cell_indices in layer_cells.items():
         for idx in cell_indices:
             if idx < n_cells:
                 layer_labels[idx] = layer_name
     
-    return layer_labels
+    return layer_labels, cell_depths
 
-
-def extract_trimmed_profiles(mean_profiles, bin_centers, trim_start_cm, trim_end_cm):
+def extract_trimmed_profiles(mean_profiles, bin_centers, trim_start_cm, trim_end_cm, 
+                            target_n_bins=115):
     """
-    Extract spatial profiles trimmed to the analysis window.
+    Extract profiles within the specified range and interpolate to common grid.
+    
+    Parameters:
+    -----------
+    mean_profiles : array (n_cells, n_bins)
+    bin_centers : array
+    trim_start_cm : float
+    trim_end_cm : float
+    target_n_bins : int
+        Target number of bins after interpolation (default: 115)
     
     Returns:
     --------
-    trimmed_profiles : array (n_cells, n_trimmed_bins)
-    trimmed_bin_centers : array (n_trimmed_bins,)
+    trimmed_profiles : array (n_cells, target_n_bins)
+        Profiles interpolated to common grid
+    common_bin_centers : array (target_n_bins,)
+        Common bin centers for all sessions
     """
-    # Find bin indices for trimming
+    from scipy.interpolate import interp1d
+    
+    # Find indices for trimming
     start_idx = np.searchsorted(bin_centers, trim_start_cm)
     end_idx = np.searchsorted(bin_centers, trim_end_cm)
     
-    trimmed_profiles = mean_profiles[:, start_idx:end_idx]
-    trimmed_bin_centers = bin_centers[start_idx:end_idx]
+    # Extract the spatial range
+    trimmed_profiles_raw = mean_profiles[:, start_idx:end_idx]
+    trimmed_bin_centers_raw = bin_centers[start_idx:end_idx]
     
-    return trimmed_profiles, trimmed_bin_centers
-
+    # Create common spatial grid
+    common_bin_centers = np.linspace(trim_start_cm, trim_end_cm, target_n_bins)
+    
+    # Interpolate each cell's profile onto the common grid
+    n_cells = mean_profiles.shape[0]
+    trimmed_profiles = np.zeros((n_cells, target_n_bins))
+    
+    for i in range(n_cells):
+        # Create interpolation function
+        f = interp1d(trimmed_bin_centers_raw, trimmed_profiles_raw[i, :], 
+                    kind='linear', bounds_error=False, fill_value='extrapolate')
+        
+        # Interpolate to common grid
+        trimmed_profiles[i, :] = f(common_bin_centers)
+    
+    print(f"  Original: {len(trimmed_bin_centers_raw)} bins → Interpolated to {target_n_bins} bins")
+    
+    return trimmed_profiles, common_bin_centers
 
 def zscore_profiles(profiles):
     """
@@ -313,7 +357,8 @@ def aggregate_pca_data(animal_id, base_dir, output_dir,
     all_landmark_prefs = []
     all_peak_positions = []
     all_original_indices = []
-    
+    all_cell_depths = []  # ← ADD THIS LINE
+
     session_info = {}
     trimmed_bin_centers = None
     
@@ -379,11 +424,12 @@ def aggregate_pca_data(animal_id, base_dir, output_dir,
             print(f"    Between landmarks: {n_between}")
             
             # Assign layer labels
-            layer_labels = assign_layer_labels(med_coords, layer_cells)
+            layer_labels, cell_depths = assign_layer_labels_and_depths(med_coords, layer_cells)
             
-            # Extract trimmed profiles
+            # Extract trimmed profiles (interpolated to common grid)
             trimmed_profiles, session_bin_centers = extract_trimmed_profiles(
-                mean_profiles, bin_centers, trim_start_cm, trim_end_cm
+                mean_profiles, bin_centers, trim_start_cm, trim_end_cm,
+                target_n_bins=115  # Use 115 since that's what most sessions have
             )
             
             # Store bin centers (should be same across sessions)
@@ -401,7 +447,8 @@ def aggregate_pca_data(animal_id, base_dir, output_dir,
                 all_landmark_prefs.append(landmark_prefs[cell_idx])
                 all_peak_positions.append(peak_positions[cell_idx])
                 all_original_indices.append(cell_idx)
-            
+                all_cell_depths.append(cell_depths[cell_idx])  # ← ADD THIS LINE
+
             # Store session info
             session_info[session_id] = {
                 'tseries_path': tseries_path,
@@ -419,6 +466,23 @@ def aggregate_pca_data(animal_id, base_dir, output_dir,
             traceback.print_exc()
             continue
     
+    # DEBUG: Check profile shapes before converting to array
+    print("\n" + "="*60)
+    print("DEBUG: Checking profile shapes")
+    print("="*60)
+    profile_shapes = [p.shape for p in all_profiles]
+    unique_shapes = set(profile_shapes)
+    print(f"Unique profile shapes found: {unique_shapes}")
+    
+    if len(unique_shapes) > 1:
+        print("\n⚠️ WARNING: Profiles have different shapes!")
+        for shape in unique_shapes:
+            count = profile_shapes.count(shape)
+            print(f"  Shape {shape}: {count} cells")
+    
+    # Convert to arrays
+    all_profiles = np.array(all_profiles)
+    
     # Convert to arrays
     all_profiles = np.array(all_profiles)
     all_session_labels = np.array(all_session_labels, dtype='U10')
@@ -426,7 +490,8 @@ def aggregate_pca_data(animal_id, base_dir, output_dir,
     all_landmark_prefs = np.array(all_landmark_prefs, dtype=int)
     all_peak_positions = np.array(all_peak_positions)
     all_original_indices = np.array(all_original_indices, dtype=int)
-    
+    all_cell_depths = np.array(all_cell_depths)  # ← ADD THIS LINE
+
     # Z-score normalize profiles
     all_profiles_zscore = zscore_profiles(all_profiles)
     
@@ -499,7 +564,8 @@ def aggregate_pca_data(animal_id, base_dir, output_dir,
         cells.create_dataset('preferred_landmark', data=all_landmark_prefs)
         cells.create_dataset('peak_positions', data=all_peak_positions)
         cells.create_dataset('original_cell_indices', data=all_original_indices)
-        
+        cells.create_dataset('cell_depths', data=all_cell_depths)  # ← ADD THIS LINE
+
         # Features
         features = f.create_group('features')
         features.create_dataset('spatial_profiles', data=all_profiles)

@@ -25,10 +25,10 @@ import seaborn as sns
 # ============================================================================
 
 # Path to the aggregated PCA data file
-PCA_DATA_PATH = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\PCA\JSY051_pca_data.h5"
+PCA_DATA_PATH = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\PCA\JSY052_pca_data.h5"
 
 # Output directory for figures
-FIGURE_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\PCA\figures"
+FIGURE_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\PCA\figures"
 
 # Number of PCs to compute and analyze
 N_COMPONENTS = 10
@@ -68,7 +68,14 @@ def load_pca_data(filepath):
         
         # Features
         data['spatial_profiles'] = f['features/spatial_profiles'][:]
-        data['spatial_profiles_zscore'] = f['features/spatial_profiles_zscore'][:]
+        
+        if 'features/spatial_profiles_session_corrected' in f:
+            data['spatial_profiles_zscore'] = f['features/spatial_profiles_session_corrected'][:]
+            correction_method = f['features'].attrs.get('correction_method', 'Unknown')
+            print(f"  ✓ Using session-corrected profiles ({correction_method})")
+        else:
+            data['spatial_profiles_zscore'] = f['features/spatial_profiles_zscore'][:]
+            print(f"  ⚠ Using original z-scored profiles (no session correction found)")
     
     print(f"  Animal: {data['animal_id']}")
     print(f"  Cells: {data['n_cells']}")
