@@ -59,6 +59,65 @@ class TwoP():
         self.s2p_spks = spks[usecells, :]
 
 
+
+    def calc_inf_spikes(dFF, neu_correction=0.7, fps=7.49):
+        """ Calculate dF/F and denoised fluorescence signal using Oasis.
+        
+        This is a simplified version of the calc_dFF method in the TwoP class,
+        and can be used for dFF data preprocessed in Matlab.
+        
+        Parameters
+        ----------
+        dFF : np.ndarray
+            dF/F data for each cell. Shape: (cells, time).
+        neu_correction : float, optional
+            Neuropil correction factor. Default is 0.7.
+        fps : float, optional
+            Frames per second. Default is 7.49.
+        
+        Returns
+        -------
+        denoised_dFF : np.ndarray
+            Denoised dF/F data for each cell. Shape: (cells, time).
+        sps : np.ndarray
+            Spikes data for each cell. Shape: (cells, time).
+        """
+
+        nCells, lenT = np.shape(dFF)
+
+        denoised_dFF = np.zeros([nCells, lenT])
+        sps = np.zeros([nCells, lenT])
+
+        for c in range(nCells):
+
+            g = oasis.functions.estimate_time_constant(dFF[c,:].copy(), 1)
+            denoised_dFF[c,:], sps[c,:] = oasis.oasisAR1(dFF[c,:].copy(), g)
+
+        return denoised_dFF, sps
+
+
+    def normalize_axonal_spikes(spikes, cfg):
+        # set a maximum spike rate for each cell
+        # then, normalize
+
+        sd_thresh = cfg['cell_sd_thresh']
+
+        nCells = np.size(spikes, 0)
+
+        for c in range(nCells):
+            sp_ = spikes[c, :]
+            std_ = np.std(sp_)
+            mean_ = np.mean(sp_)
+
+            sp_[sp_ > (mean_ + std_ * sd_thresh)] = mean_ + std_ * sd_thresh
+
+            spikes[c, :] = sp_
+
+        norm_spikes = spikes / np.max(spikes, axis=1, keepdims=True)
+        
+        return norm_spikes
+
+
     def calc_dFF(self, neu_correction=0.7):
 
         F = self.F
