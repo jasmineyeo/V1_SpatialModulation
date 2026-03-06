@@ -33,6 +33,7 @@ pip install -e .
 ```
 V1_SpatialModulation/
 ├── Preprocess.py                  # Main preprocessing script
+├── Preprocess_MultiRecordings.py  # Preprocessing script for sessions with multiple recordings
 ├── helper/                        # Shared helper modules
 ├── .Debugging/                    # Debugging & validation scripts (hidden)
 ├── .VisualResponseAnalysis/       # Visual response analysis notebooks (hidden)
@@ -67,71 +68,123 @@ Five main analysis pipelines, organized by numbered directories:
 
 **Location:** `1.SpatialModulation_analysis/`
 
-#### Single Recording Analysis
-```
-1.SpatialModulation_analysis/SMICalculation_LayerSpecific_SingleRecording.py
-```
-- **Input:** Single recording session data (mat/h5 files)
-- **Output:** Layer-specific SMI values, spatial tuning curves
-- **Use case:** First-pass analysis of one recording
-- **Next step:** Batch processing
+There are two parallel sub-pipelines: 
+**Standard SMI** (full-session SMI per day) and **Within-Session SMI** (how SMI develops over the course of a single session).
 
-#### Batch Processing
-```
-1.SpatialModulation_analysis/SMICalculation_LayerSpecific_Batch.py
-```
-- **Input:** Multiple recording sessions (defined in script)
-- **Output:** Compiled SMI metrics across recordings
-- **Use case:** Process all recordings for one animal
-- **Dependencies:** SingleRecording script must work first
+---
 
-#### Within-Session Analysis (Combined Trials)
-```
-1.SpatialModulation_analysis/SMICalculation_LayerSpecific_CombinedTrialsWithinSession.py
-```
-- **Input:** Multiple trials from same session
-- **Output:** Trial-averaged SMI values
-- **Use case:** Improve SNR by combining trials
-- **Note:** Alternative approach to single-trial analysis
-
-#### Within-Session Workflow (Full Pipeline)
-```
-1. 1.SpatialModulation_analysis/SMICalculation_LayerSpecific_WithinSession_SingleRecording.py
-   └─> Single recording, within-session SMI
-
-2. 1.SpatialModulation_analysis/SMICalculation_LayerSpecific_WithinSession_Batch.py
-   └─> Batch process multiple recordings (within-session mode)
-
-3. 1.SpatialModulation_analysis/SMICalculation_LayerSpecific_WithinSession_AcrossRecordings.py
-   └─> Compare across recordings for one animal
-
-4. 1.SpatialModulation_analysis/SMICalculation_LayerSpecific_WithinSession_AcrossAnimals.py
-   └─> Cross-animal comparison (within-session SMI)
-```
-
-#### Cross-Session & Cross-Animal Comparisons
-```
-1.SpatialModulation_analysis/SMICalculation_CompareSessionsWithinAnimal.py
-```
-- **Input:** Multiple sessions from same animal (batch output)
-- **Output:** Session stability plots, correlation matrices
-- **Use case:** Track SMI changes across days
+#### Pipeline A: Full-Session SMI (one SMI value per session, tracks learning across days)
 
 ```
-1.SpatialModulation_analysis/SMI_CompareAcrossAnimals_pt1.py
-1.SpatialModulation_analysis/SMI_CompareAcrossAnimals_pt2.py
+Raw 2p data  →  Preprocess.py / Preprocess_MultipleRecordings.py
+                        │
+                        │  *preproc*.h5
+                        ▼
+        ┌───────────────────────────────────────────┐
+        │  helper/SMICalculation_LayerSpecific_      │
+        │           SingleRecording.py               │
+        │  (Run_SMI_Layer_Analysis /                 │
+        │   Run_SMI_AxonalImaging_window_Analysis)   │
+        └─────────────────┬─────────────────────────┘
+                          │  called by ↓
+                          ▼
+        SMI_FullSession_Batch.py
+                          │  *_smi_results.h5  (one per session)
+                          ▼
+        SMI_FullSession_WithinAnimal.py
+                          │  one animal, across days
+                          ▼
+        SMI_FullSession_AcrossAnimals.py          ← final population analysis
 ```
-- **Input:** SMI data from multiple animals
-- **Output:** Population statistics, cross-animal summary figures
-- **Use case:** Publication-ready group statistics
-- **Note:** Pt1 = data loading/processing, Pt2 = statistical tests/plotting
+
+##### `helper/SMICalculation_LayerSpecific_SingleRecording.py`
+The core per-session analysis module. Not run directly — called by the batch script.
+- **Input:** Session folder containing `*preproc*.h5`
+- **Key functions:**
+  - `Run_SMI_Layer_Analysis()` — for prism (layered) recordings: applies onset/reward zone filtering, computes SMI per layer (L2/3, L4, L5, L6), plots sorted response maps and layer distributions
+  - `Run_SMI_AxonalImaging_window_Analysis()` — for window/axonal imaging sessions: same pipeline adapted for non-layered data
+- **Output:** `{date}_{animal}_smi_results.h5` saved in the session folder
+
+##### `SMI_FullSession_Batch.py`
+Batch runner — loops over a user-defined list of session folders and calls the single-recording analysis on each.
+- **Input:** List of TSeries session directories (edit `session_dirs` at top of script). Each must contain a `*preproc*.h5` file.
+- **Output:** One `*_smi_results.h5` per session, saved in each session folder
+- **Note:** Update the glob pattern `"*preproc*.h5"` (with wildcard before `.h5`) so it finds both `*_preproc.h5` and `*_preproc_multi.h5` outputs
+
+##### `SMI_FullSession_WithinAnimal.py`
+Loads all `*_smi_results.h5` files for one animal and compares SMI across recording days.
+- **Input:** Animal's root directory (searched recursively for `*_smi_results.h5`)
+- **Analyses:**
+  - Temporal progression of median SMI per layer (Days 1–N)
+  - Early vs. late comparison (Days 1–2 vs. Days 6–7)
+  - Proportion of spatially modulated cells (SMI > 0.1) per layer per day
+  - Gap closure: do L2/3 cells catch up to deeper layers over time?
+- **Output:** Stability plots, layer progression figures, significance markers
+
+##### `SMI_FullSession_AcrossAnimals.py`
+Loads `*_smi_results.h5` from all animals under a shared parent directory and runs pooled population-level analysis.
+- **Input:** Parent directory (e.g. `D:\V1_SpatialModulation\2p\V1_prism\`), searched recursively
+- **Analyses:**
+  1. Day 1 layer differences — do deeper layers start with higher SMI?
+  2. Temporal progression per layer (pooled) — does SMI increase over days?
+  3. Layer development rate comparisons — do layers develop at different rates?
+  4. Early (Days 1–2) vs. Late (Days 6–7) comparison (pooled)
+  5. Gap closure — does the Deep − Superficial SMI gap narrow over time?
+  6. Individual animal trajectory tracking
+  7. 3×3 publication-ready summary figure + summary tables
+- **Statistics:** Cliff's Delta, Kruskal-Wallis + Mann-Whitney + FDR correction, permutation tests (slope, slope comparison, group differences), bootstrap confidence intervals
+- **Output:** Population statistics figures, `smi_summary_table.csv`, `smi_slopes_table.csv`
+
+---
+
+#### Pipeline B: Lap-Chunk SMI (SMI computed in lap blocks within a session, tracks intra-session convergence)
+
+Asks: Does SMI increase over the course of a single recording? How many laps are needed to plateau? Do deeper layers stabilize faster?
 
 ```
-1.SpatialModulation_analysis/SMICalculation_AnalyzeAcrossAnimals.py
+*preproc*.h5  (single session)
+      │
+      ▼
+SMI_LapChunk_SingleRecording.py
+      │  *_within_session_smi.h5  (per session)
+      ▼
+SMI_LapChunk_WithinAnimal.py
+      │  one animal, across days
+      │  run_across_days_analysis_revised()
+      ▼
+SMI_LapChunk_AcrossAnimals.py
+      │  run_across_animals_analysis_revised()
+      ▼
+      Population-level lap-chunk figures
 ```
-- **Input:** Aggregated SMI data across all animals
-- **Output:** Comprehensive cross-animal analysis
-- **Use case:** Final summary analysis for all animals combined
+
+##### `SMI_LapChunk_SingleRecording.py`
+Runs the lap-chunk SMI analysis on a single recording session.
+- **Input:** Session folder containing `*preproc*.h5`
+- **Analysis approaches:**
+  - *Fixed chunks:* non-overlapping blocks of 20 laps — tracks SMI stability within a chunk
+  - *Cumulative:* progressively adds laps (laps 1–20, 1–40, 1–60, ...) — tracks SMI convergence
+- **Output:** `*_within_session_smi.h5` saved in the session folder; figures showing SMI vs. lap chunk per layer
+
+##### `SMI_LapChunk_WithinAnimal.py`
+Compares lap-chunk SMI curves across days for one animal.
+- **Input:** Animal directory (searched recursively for `*_within_session_smi.h5`)
+- **Key function:** `run_across_days_analysis_revised()`
+- **Output:** Per-animal across-day lap-chunk summaries
+
+##### `SMI_LapChunk_AcrossAnimals.py`
+Pools lap-chunk data across all animals for population-level figures.
+- **Input:** List of `(animal_id, animal_dir)` pairs
+- **Key function:** `run_across_animals_analysis_revised()`
+- **Output:** Population-level lap-chunk figures
+
+---
+
+#### Deprecated Scripts
+
+| Script | Status | Replaced by |
+|--------|--------|-------------|
+| `SMICalculation_LayerSpecific_CombinedTrialsWithinSession.py` | Superseded | `Preprocess_MultipleRecordings.py` + `SMI_FullSession_Batch.py` |
 
 ---
 
@@ -340,15 +393,15 @@ Step 8: 4.PCA/PCA_ComprehensiveAnalysis.py
 
 ### Typical SMI Workflow
 ```
-Raw Data (mat/h5)
+Raw Data
     |
-SingleRecording.py -> SMI values for one session
+Preprocess.py / Preprocess_MultipleRecordings.py  →  *_preproc*.h5
     |
-Batch.py -> SMI across multiple sessions
+SMI_FullSession_Batch.py                          →  *_smi_results.h5  (per session)
     |
-CompareSessionsWithinAnimal.py -> Stability analysis
+SMI_FullSession_WithinAnimal.py                   →  stability plots (per animal)
     |
-CompareAcrossAnimals.py -> Population statistics
+SMI_FullSession_AcrossAnimals.py                  →  population statistics
 ```
 
 ### PCA Workflow
@@ -370,20 +423,33 @@ Interpretation.py + LayerStatistics.py -> Biological insights
 
 ## Quick Start Guide
 
-### Running SMI Analysis (First Time)
+### Running Full-Session SMI Analysis
 ```bash
-# 1. Start with single recording
-python 1.SpatialModulation_analysis/SMICalculation_LayerSpecific_SingleRecording.py
+# 1. Preprocess data (one of:)
+python Preprocess.py                      # single recording per session
+python Preprocess_MultipleRecordings.py   # multiple recordings per session
 
-# 2. If successful, batch process
-python 1.SpatialModulation_analysis/SMICalculation_LayerSpecific_Batch.py
+# 2. Batch SMI analysis across all sessions
+#    Edit session_dirs list in the script first
+python 1.SpatialModulation_analysis/SMI_FullSession_Batch.py
 
-# 3. Compare across sessions
-python 1.SpatialModulation_analysis/SMICalculation_CompareSessionsWithinAnimal.py
+# 3. Compare SMI across days within one animal
+python 1.SpatialModulation_analysis/SMI_FullSession_WithinAnimal.py
 
-# 4. Cross-animal analysis
-python 1.SpatialModulation_analysis/SMI_CompareAcrossAnimals_pt1.py
-python 1.SpatialModulation_analysis/SMI_CompareAcrossAnimals_pt2.py
+# 4. Cross-animal population analysis
+python 1.SpatialModulation_analysis/SMI_FullSession_AcrossAnimals.py
+```
+
+### Running Lap-Chunk SMI Analysis
+```bash
+# 1. Run per session (edit data_filepath in script)
+python 1.SpatialModulation_analysis/SMI_LapChunk_SingleRecording.py
+
+# 2. Compare across days for one animal (edit animal_dir in script)
+python 1.SpatialModulation_analysis/SMI_LapChunk_WithinAnimal.py
+
+# 3. Population-level analysis across animals (edit animals list in script)
+python 1.SpatialModulation_analysis/SMI_LapChunk_AcrossAnimals.py
 ```
 
 ### Running PCA Pipeline

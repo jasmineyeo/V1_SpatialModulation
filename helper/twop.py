@@ -91,6 +91,7 @@ class TwoP():
         for c in range(nCells):
 
             g = oasis.functions.estimate_time_constant(dFF[c,:].copy(), 1)
+            g = float(np.ravel(g)[0])
             denoised_dFF[c,:], sps[c,:] = oasis.oasisAR1(dFF[c,:].copy(), g)
 
         return denoised_dFF, sps
@@ -154,6 +155,7 @@ class TwoP():
             # below lines (99-101) commented out because oasis package could not be installed (JSY - 02/03/2025)
             # deconvolved spiking activity and denoised fluorescence signal
             g = oasis.functions.estimate_time_constant(norm_dFF[c,:].copy(), 1)
+            g = float(np.ravel(g)[0])
             denoised_dFF[c,:], sps[c,:] = oasis.oasisAR1(norm_dFF[c,:].copy(), g)
 
             norm_F[c,:] = _normF

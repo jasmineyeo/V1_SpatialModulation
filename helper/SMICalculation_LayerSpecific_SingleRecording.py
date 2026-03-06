@@ -299,7 +299,7 @@ def Run_SMI_Layer_Analysis(data_filepath,
         if verbose:
             print("STEP 1: Loading preprocessed data...")
 
-        preproc_files = glob.glob(os.path.join(data_filepath, "*preproc.h5"))
+        preproc_files = glob.glob(os.path.join(data_filepath, "*preproc*.h5"))
         if not preproc_files:
             raise ValueError(f"No preprocessed .h5 file found in {data_filepath}")
 
@@ -558,7 +558,7 @@ def Run_SMI_AxonalImaging_window_Analysis(data_filepath,
         if verbose:
             print("STEP 1: Loading preprocessed data...")
 
-        preproc_files = glob.glob(os.path.join(data_filepath, "*preproc.h5"))
+        preproc_files = glob.glob(os.path.join(data_filepath, "*preproc*.h5"))
         if not preproc_files:
             raise ValueError(f"No preprocessed .h5 file found in {data_filepath}")
 

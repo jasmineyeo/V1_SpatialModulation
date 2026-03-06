@@ -3,7 +3,10 @@
     "allow": [
       "Bash(dir:*)",
       "Bash(wc:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(python -c \":*)",
+      "Bash(iconv -f utf-8 -t utf-8//IGNORE)",
+      "Bash(python -c \" import json, io, sys with open\\(''5.AxonalSM_analysis/notebook/AxonMerge_Suite2p.ipynb'', ''r'', encoding=''utf-8''\\) as f: nb = json.load\\(f\\) out = [] out.append\\(f''Total cells: {len\\(nb[\"\"cells\"\"]\\)}''\\) for i, cell in enumerate\\(nb[''cells'']\\): src = ''''.join\\(cell[''source'']\\) has_dist = ''dist_vec < max_distance'' in src uses_flag = ''use_max_distance'' in src out.append\\(f''Cell {i}: dist_constraint={has_dist}, uses_flag={uses_flag}''\\) with open\\(''_cell_audit.txt'', ''w'', encoding=''utf-8''\\) as f: f.write\\(''\\\\n''.join\\(out\\)\\) print\\(''Written to _cell_audit.txt''\\) \")"
     ]
   }
 }

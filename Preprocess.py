@@ -417,13 +417,15 @@ def preprocess_2pVR(twop_filepath):
 if __name__ == "__main__":
     
     twop_filepaths = [
-        r'D:\V1_SpatialModulation\2p\V1_window\JSY061_ChronicImaging_Axonal\260202_JSY_JSY061_SpMod_AxonalImaging_Day1\TSeries-02022026-1804-001',
-        # r'D:\V1_SpatialModulation\2p\V1_window\JSY061_ChronicImaging_Axonal\260203_JSY_JSY061_SpMod_AxonalImaging_Day2\TSeries-02032026-1751-002',
-        # r'D:\V1_SpatialModulation\2p\V1_window\JSY061_ChronicImaging_Axonal\260204_JSY_JSY061_SpMod_AxonalImaging_Day3\TSeries-02042026-2009-001',
-        # r'D:\V1_SpatialModulation\2p\V1_window\JSY061_ChronicImaging_Axonal\260205_JSY_JSY061_SpMod_AxonalImaging_Day4\TSeries-02052026-1833-002',
-        # r'D:\V1_SpatialModulation\2p\V1_window\JSY061_ChronicImaging_Axonal\260206_JSY_JSY061_SpMod_AxonalImaging_Day5\TSeries-02062026-1850-001',
-        # r'D:\V1_SpatialModulation\2p\V1_window\JSY061_ChronicImaging_Axonal\260207_JSY_JSY061_SpMod_AxonalImaging_Day6\TSeries-02072026-2023-001',
-        # r"D:\V1_SpatialModulation\2p\V1_window\JSY061_ChronicImaging_Axonal\260208_JSY_JSY061_SpMod_AxonalImaging_Day7\TSeries-02082026-1826-001"
+        # r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260202_JSY_JSY061_SpMod_AxonalImaging_Day1\TSeries-02022026-1804-001"
+
+        # r'D:\V1_SpatialModulation\2p\V1_window\JSY061_ChronicImaging_Axonal\260202_JSY_JSY061_SpMod_AxonalImaging_Day1\TSeries-02022026-1804-001',
+        r'D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260203_JSY_JSY061_SpMod_AxonalImaging_Day2\TSeries-02032026-1751-002',
+        r'D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260204_JSY_JSY061_SpMod_AxonalImaging_Day3\TSeries-02042026-2009-001',
+        r'D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260205_JSY_JSY061_SpMod_AxonalImaging_Day4\TSeries-02052026-1833-002',
+        r'D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260206_JSY_JSY061_SpMod_AxonalImaging_Day5\TSeries-02062026-1850-001',
+        r'D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260207_JSY_JSY061_SpMod_AxonalImaging_Day6\TSeries-02072026-2023-001',
+        r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260208_JSY_JSY061_SpMod_AxonalImaging_Day7\TSeries-02082026-1826-001"
         ]
 
     
