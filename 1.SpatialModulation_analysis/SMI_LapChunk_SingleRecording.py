@@ -913,7 +913,7 @@ def run_within_session_analysis(data_filepath, chunk_size=20, min_chunk_size=10,
 
 if __name__ == "__main__":
     # Example usage
-    data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251009_JSY_JSY052_SpatialModulation_Day1\TSeries-10092025-1542-002"
+    data_filepath = r"F:\2P\unprocessed\251030_JSY_JSY054_SpMod_Day1\TSeries-10302025-1512-001"
     
     results = run_within_session_analysis(data_filepath, chunk_size=20, min_chunk_size=10)
     

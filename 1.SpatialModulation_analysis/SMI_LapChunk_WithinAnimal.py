@@ -363,7 +363,7 @@ def visualize_across_days_revised(all_days_data, animal_id, save_path=None, focu
 # MAIN WORKFLOW
 # ============================================================================
 
-def run_across_days_analysis_revised(animal_dir, animal_id, save_path=None, focus_days=[1, 2, 3]):
+def run_across_days_analysis_revised(animal_dir, animal_id, save_path=None, focus_days=list(range(1, 8))):
     """REVISED across-days analysis with better visualization."""
     print(f"\n{'='*80}")
     print(f"ACROSS-DAYS ANALYSIS (REVISED): {animal_id}")
@@ -398,10 +398,19 @@ def run_across_days_analysis_revised(animal_dir, animal_id, save_path=None, focu
 # =============================================================================
 
 if __name__ == "__main__":
-    # Example usage
-    animal_dir = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging"
-    animal_id = "JSY052"
-    
-    results = run_across_days_analysis_revised(animal_dir, animal_id, focus_days=[1, 2, 3])
-    
+    ANIMAL_DIRS = {
+        'JSY040': r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging',
+        'JSY041': r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging',
+        'JSY044': r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging',
+        'JSY051': r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging',
+        'JSY052': r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging',
+        'JSY054': r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging',
+        'JSY055': r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging',
+    }
+
+    ANIMAL = 'JSY044'  # <-- change this to run a different animal
+
+    animal_dir = ANIMAL_DIRS[ANIMAL]
+    results = run_across_days_analysis_revised(animal_dir, ANIMAL)
+
     plt.show()

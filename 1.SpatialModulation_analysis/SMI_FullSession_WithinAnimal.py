@@ -96,9 +96,19 @@ def load_animal_smi_data(animal_dir, smi_pattern="*_smi_results.h5"):
                             'mean_smi': lg.attrs.get('mean_smi', np.nan),
                             'SMI': smi_vals,
                             'prop_modulated': prop_mod,
-                            'prop_strong_mod': prop_strong
+                            'prop_strong_mod': prop_strong,
+                            'preferred_positions': lg['preferred_positions'][:] if 'preferred_positions' in lg else np.array([]),
+                            'cell_indices': lg['cell_indices'][:].astype(int) if 'cell_indices' in lg else np.array([], dtype=int),
+                            'reliable_valid_cells': lg['reliable_valid_cells'][:].astype(int) if 'reliable_valid_cells' in lg else np.array([], dtype=int),
                         }
-                
+
+                if 'cell_info' in f:
+                    session_data['med_coords'] = f['cell_info']['med_coords'][:] if 'med_coords' in f['cell_info'] else None
+                    session_data['bin_centers'] = f['cell_info']['bin_centers'][:] if 'bin_centers' in f['cell_info'] else None
+                else:
+                    session_data['med_coords'] = None
+                    session_data['bin_centers'] = None
+
                 sessions_data[day] = session_data
                 
         except Exception as e:
@@ -632,12 +642,32 @@ def create_improved_visualizations(sessions_data, layer_diff_results, temporal_r
     
     fig.suptitle(f'{animal_id} - Within-Animal SMI Analysis (Improved)', fontsize=16, fontweight='bold')
     plt.tight_layout()
-    
+
     if save_path:
+        # Mega figure
         fig_path = os.path.join(save_path, f'{animal_id}_within_animal_smi_improved.png')
-        plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+        plt.savefig(fig_path, dpi=200, bbox_inches='tight')
         print(f"\n✓ Saved: {os.path.basename(fig_path)}")
-    
+
+        # Individual panels
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        panel_axes = [ax1, ax2, ax3, ax4, ax5, ax6, ax7, ax8, ax9]
+        panel_names = [
+            'smi_heatmap', 'smi_trajectory', 'day1_boxplot',
+            'lastday_boxplot', 'sup_vs_deep', 'early_vs_late',
+            'gap_closure', 'prop_modulated', 'summary',
+        ]
+        for ax, name in zip(panel_axes, panel_names):
+            try:
+                bbox = ax.get_tightbbox(renderer)
+                bbox = bbox.transformed(fig.dpi_scale_trans.inverted())
+                out = os.path.join(save_path, f'{animal_id}_panel_{name}.png')
+                fig.savefig(out, bbox_inches=bbox.expanded(1.15, 1.15), dpi=200)
+                print(f'  Saved: {animal_id}_panel_{name}.png')
+            except Exception:
+                pass
+
     return fig
 
 
@@ -668,7 +698,7 @@ def run_within_animal_analysis(animal_dir, save_path=None):
     # Analysis 4: Gap closure (NEW)
     gap_results = analyze_gap_closure(sessions_data, animal_id)
     
-    # Create visualizations
+    # Figure B: existing summary visualisation
     fig = create_improved_visualizations(
         sessions_data, layer_diff_results, temporal_results,
         early_late_results, gap_results, animal_id, save_path
@@ -695,11 +725,30 @@ def run_within_animal_analysis(animal_dir, save_path=None):
 # MAIN
 # =============================================================================
 
+ANIMAL_DIRS = {
+    'JSY040': r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging',
+    'JSY041': r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging',
+    'JSY044': r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging',
+    'JSY051': r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging',
+    'JSY052': r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging',
+    'JSY054': r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging',
+    'JSY055': r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging',
+}
+
 if __name__ == "__main__":
-    
-    animal_dir = r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging"
-    save_dir = r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\smi_analysis"
-    
-    results = run_within_animal_analysis(animal_dir, save_dir)
-    
+
+    # Set ANIMAL = None to loop all animals, or e.g. 'JSY044' for a single one
+    ANIMAL = None
+
+    animals_to_run = [ANIMAL] if ANIMAL else list(ANIMAL_DIRS.keys())
+
+    for animal in animals_to_run:
+        animal_dir = ANIMAL_DIRS[animal]
+        save_dir = os.path.join(animal_dir, 'smi_analysis')
+        try:
+            run_within_animal_analysis(animal_dir, save_dir)
+        except Exception as e:
+            print(f'\nERROR for {animal}: {e}')
+        plt.close('all')
+
     plt.show()

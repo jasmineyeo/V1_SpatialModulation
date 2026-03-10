@@ -514,6 +514,7 @@ def Run_SMI_AxonalImaging_window_Analysis(data_filepath,
                            exclude_start_cm=15,
                            exclude_end_cm=10,
                            smoothing_sigma=1.0,
+                           cell_selection='reliability',
                            save_figures=True,
                            verbose=True):
     """
@@ -533,6 +534,9 @@ def Run_SMI_AxonalImaging_window_Analysis(data_filepath,
         Boundary exclusion distances (cm).
     smoothing_sigma : float
         Gaussian smoothing sigma used in SMI calculation.
+    cell_selection : str
+        Which cell mask to use: 'reliability' (combined_reliable) or
+        'skaggs_si' (si_significant_cells). Default: 'reliability'.
     save_figures : bool
         Save visualization figures (keeps current structure when True).
     verbose : bool
@@ -545,10 +549,14 @@ def Run_SMI_AxonalImaging_window_Analysis(data_filepath,
                        parameters, bin_centers, rejected_info, figures
     """
 
+    if cell_selection not in ('reliability', 'skaggs_si'):
+        raise ValueError(f"cell_selection must be 'reliability' or 'skaggs_si', got '{cell_selection}'")
+
     try:
         if verbose:
             print("="*80)
             print("SMI AXONAL IMAGING WINDOW ANALYSIS WITH ONSET FILTERING")
+            print(f"Cell selection: {cell_selection}")
             print("="*80)
             print(f"Data: {data_filepath}")
             print(f"Onset filter: first {exclude_first_bins} bins, last {exclude_last_bins} bins")
@@ -568,12 +576,19 @@ def Run_SMI_AxonalImaging_window_Analysis(data_filepath,
         spatial_activity = preproc_data['spatial_activity']
         normalized_spatial_activity = preproc_data['norm_spatial_activity']
         bin_centers = preproc_data['bin_centers']
-        reliable_cells = preproc_data['combined_reliable']
+
+        if cell_selection == 'skaggs_si':
+            if 'si_significant_cells' not in preproc_data:
+                raise KeyError("'si_significant_cells' not found in preproc.h5 — "
+                               "re-run Preprocess_Axonal.py to regenerate.")
+            reliable_cells = preproc_data['si_significant_cells']
+        else:
+            reliable_cells = preproc_data['combined_reliable']
 
         n_cells, n_trials, n_bins = spatial_activity.shape
         if verbose:
             print(f"  Data: {n_cells} cells, {n_trials} trials, {n_bins} bins")
-            print(f"  Reliable cells: {np.sum(reliable_cells)}")
+            print(f"  Cell selection '{cell_selection}': {int(np.sum(reliable_cells))} cells")
 
         # Prepare bin centers (same scaling used previously)
         shifted_centers = bin_centers - np.min(bin_centers)
@@ -681,11 +696,13 @@ def Run_SMI_AxonalImaging_window_Analysis(data_filepath,
             'exclude_start_cm': exclude_start_cm,
             'exclude_end_cm': exclude_end_cm,
             'smoothing_sigma': smoothing_sigma,
+            'cell_selection': cell_selection,
             'n_trials': n_trials,
             'n_bins': n_bins
         }
 
-        h5_save_path = os.path.join(data_filepath, f"{animal_id}_{session_id}_smi_results.h5")
+        suffix = 'skaggs' if cell_selection == 'skaggs_si' else 'reliability'
+        h5_save_path = os.path.join(data_filepath, f"{animal_id}_{session_id}_smi_{suffix}_results.h5")
 
         save_smi_results_axonalimaging_window(
             h5_save_path, session_id, date_str, animal_id,

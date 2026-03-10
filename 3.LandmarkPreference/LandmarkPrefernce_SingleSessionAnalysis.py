@@ -21,8 +21,24 @@ import h5py
 from helper import files
 from helper import TwoP
 from helper.SpatialModulationIndexLayerSpecific import SpatialModulationIndexLayerSpecific as SMI_Layer
-import glob        
-        
+import glob
+import matplotlib.colors as mcolors
+
+# Parula colormap (MATLAB-compatible, perceptually uniform blue→yellow)
+_PARULA_COLORS = [
+    (0.2422, 0.1504, 0.6603),
+    (0.2108, 0.3706, 0.9717),
+    (0.0196, 0.5804, 0.8745),
+    (0.0863, 0.6510, 0.7490),
+    (0.1961, 0.6980, 0.6039),
+    (0.3647, 0.7412, 0.5176),
+    (0.6275, 0.7647, 0.3843),
+    (0.8510, 0.7882, 0.1961),
+    (0.9686, 0.8235, 0.0667),
+    (0.9765, 0.9843, 0.0510),
+]
+PARULA = mcolors.LinearSegmentedColormap.from_list('parula', _PARULA_COLORS)
+
 # ============================================================================
 # PHASE 1: LANDMARK RESPONSE IDENTIFICATION
 # ============================================================================
@@ -276,33 +292,27 @@ def plot_cells_by_landmark_assignment(landmark_results, bin_centers,
     --------
     fig : matplotlib.figure.Figure
     """
-    from matplotlib.colors import LinearSegmentedColormap
-    
     mean_profiles = landmark_results['mean_profiles']
     preferred_landmark = landmark_results['preferred_landmark']
     valid_cells = landmark_results['valid_cells']
     landmark_windows = landmark_results['landmark_windows']
     n_landmarks = len(landmark_positions)
-    
+
     # Define trim region
     n_bins = len(bin_centers)
     valid_start = trim_start_bins
     valid_end = n_bins - trim_end_bins if trim_end_bins > 0 else n_bins
     trimmed_bin_centers = bin_centers[valid_start:valid_end]
-    
-    # Colormap
-    cmap = LinearSegmentedColormap.from_list('EnhancedBlues', 
-                                           [(1,1,1), (0.8,0.8,1), (0.4,0.4,0.9), (0,0,0.8), (0,0,0.5)])
-    
+
     # Create figure - one column per landmark
     fig, axes = plt.subplots(1, n_landmarks, figsize=(5*n_landmarks, 8))
-    
+
     if n_landmarks == 1:
         axes = [axes]
-    
+
     for lm_idx in range(n_landmarks):
         ax = axes[lm_idx]
-        
+
         # Get cells assigned to this landmark
         lm_cell_mask = valid_cells & (preferred_landmark == lm_idx)
         lm_cell_indices = np.where(lm_cell_mask)[0]
@@ -335,7 +345,7 @@ def plot_cells_by_landmark_assignment(landmark_results, bin_centers,
                 sorted_activity_norm[i] = sorted_activity[i]
         
         # Plot
-        im = ax.imshow(sorted_activity_norm, aspect='auto', cmap=cmap,
+        im = ax.imshow(sorted_activity_norm, aspect='auto', cmap=PARULA,
                       interpolation='nearest', vmin=0, vmax=1)
         
         # Add ALL landmark lines (red dashed)
@@ -522,8 +532,6 @@ def plot_rejected_cells_response(landmark_results, bin_centers,
     --------
     fig : matplotlib.figure.Figure
     """
-    from matplotlib.colors import LinearSegmentedColormap
-    
     mean_profiles = landmark_results['mean_profiles']
     rejected = landmark_results['rejected_cells']
     params = landmark_results['parameters']
@@ -554,10 +562,6 @@ def plot_rejected_cells_response(landmark_results, bin_centers,
     
     if n_categories == 1:
         axes = [axes]
-    
-    # Colormap
-    cmap = LinearSegmentedColormap.from_list('EnhancedBlues', 
-                                           [(1,1,1), (0.8,0.8,1), (0.4,0.4,0.9), (0,0,0.8), (0,0,0.5)])
     
     for ax_idx, (cat_name, cat_title, cell_indices) in enumerate(categories):
         ax = axes[ax_idx]
@@ -590,7 +594,7 @@ def plot_rejected_cells_response(landmark_results, bin_centers,
                 sorted_activity_norm[i] = sorted_activity[i]
         
         # Plot
-        im = ax.imshow(sorted_activity_norm, aspect='auto', cmap=cmap,
+        im = ax.imshow(sorted_activity_norm, aspect='auto', cmap=PARULA,
                       interpolation='nearest', vmin=0, vmax=1)
         
         # Add landmark lines
@@ -1245,8 +1249,11 @@ def run_landmark_analysis(normalized_spatial_activity, bin_centers, layer_cells,
     print("-"*70)
     
     if save_path is not None:
-        save_dir = save_path
-        h5_save_path = os.path.join(save_dir, f"{session_id}_landmark_preferences.h5")
+        # H5 file stays at the session root (batch skip_existing checks here)
+        h5_save_path = os.path.join(save_path, f"{session_id}_landmark_preferences.h5")
+        # Figures go into a dedicated subfolder
+        save_dir = os.path.join(save_path, 'LandmarkPreference')
+        os.makedirs(save_dir, exist_ok=True)
     else:
         save_dir = None
         h5_save_path = None
@@ -1303,7 +1310,7 @@ def run_landmark_analysis(normalized_spatial_activity, bin_centers, layer_cells,
         save_path=save_dir
     )
 
-    plt.show()
+    # plt.show()
     
     # Phase 5: Save HDF5 data
     if h5_save_path is not None and session_id is not None:

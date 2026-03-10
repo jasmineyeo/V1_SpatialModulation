@@ -1,9 +1,9 @@
 """
 SMI_LapChunk_Batch.py
-Batch processing script for within-session lap-chunk SMI analysis using
-SMI_LapChunk_SingleRecording.py.
+Batch processing script for within-session lap-chunk SMI analysis.
 
-Runs analysis on selected 2p recording sessions.
+Runs analysis on all chronic imaging sessions.
+Set skip_existing=True (default) to skip sessions that already have results.
 
 JSY, 2025
 """
@@ -16,35 +16,37 @@ import sys
 
 sys.path.insert(0, r"C:\Users\jasmineyeo\Documents\GitHub\V1_SpatialModulation")
 
-# Import main single-session executor
 from SMI_LapChunk_SingleRecording import run_within_session_analysis
 
 
-# -----------------------------------------------------------------------------
-# Extract date + session ID from folder name
-# -----------------------------------------------------------------------------
-def extract_date_and_session(session_folder):
-    """
-    Matches naming style:
-    YYMMDD_JSY_JSY0XX_SpatialModulation_DayX
-    """
-    match = re.match(r"(\d{6})_.*_(Day\d+)", os.path.basename(session_folder))
+def extract_date_and_session(session_dir):
+    """Extract date and session ID from parent folder name (one level up from TSeries)."""
+    parent = os.path.basename(os.path.dirname(session_dir))
+    match = re.match(r"(\d{6})_.*_(Day\d+)", parent)
     if match:
         return match.group(1), match.group(2)
     return "Unknown", "Unknown"
 
 
-# -----------------------------------------------------------------------------
-# MAIN BATCH FUNCTION
-# -----------------------------------------------------------------------------
 def batch_lapcchunk_analysis(chunk_size=20, min_chunk_size=10,
                               exclude_first_bins=5, exclude_last_bins=5,
                               segment_distance=28, exclude_start_cm=15,
                               exclude_end_cm=10, smoothing_sigma=1.0,
-                              save_figures=True):
+                              save_figures=True, skip_existing=True):
 
-    # Define all data file paths to process
     session_dirs = [
+
+        # --- JSY040 ---
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\250620_JSY_JSY040_SpatialModulation_Day1_V1Prism\TSeries-06202025-1515-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\250622_JSY_JSY040_SpatialModulation_Day3_V1Prism\TSeries-06222025-1550-001',
+
+        # --- JSY041 ---
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250616_JSY_JSY041_SpatialModulation_Day1_V1Prism\TSeries-06162025-1521-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250618_JSY_JSY041_SpatialModulation_Day3_V1Prism\TSeries-06182025-1641-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250620_JSY_JSY041_SpatialModulation_Day5_V1Prism\TSeries-06202025-1515-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250622_JSY_JSY041_SpatialModulation_Day7_V1Prism\TSeries-06222025-1550-001',
+
+        # --- JSY044 (all already done, will skip) ---
         r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1\TSeries-09062025-1308-001',
         r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2\TSeries-09072025-1257-001',
         r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3\TSeries-09082025-1540-001',
@@ -52,27 +54,72 @@ def batch_lapcchunk_analysis(chunk_size=20, min_chunk_size=10,
         r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250910_JSY_JSY044_SpatialModulation_Day5\TSeries-09102025-1340-001',
         r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250911_JSY_JSY044_SpatialModulation_Day6\TSeries-09112025-1414-001',
         r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250912_JSY_JSY044_SpatialModulation_Day7\TSeries-09122025-1334-001',
+
+        # --- JSY051 ---
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251101_JSY_JSY051_SpMod_Day1\TSeries-11012025-1725-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251102_JSY_JSY051_SpMod_Day2\TSeries-11022025-1642-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251103_JSY_JSY051_SpMod_Day3\TSeries-11032025-1715-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251104_JSY_JSY051_SpMod_Day4\TSeries-11042025-1418-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251105_JSY_JSY051_SpMod_Day5\TSeries-11052025-1512-002',
+
+        # --- JSY052 (Day4 on F drive) ---
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251009_JSY_JSY052_SpatialModulation_Day1\TSeries-10092025-1542-002',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251010_JSY_JSY052_SpatialModulation_Day2\TSeries-10102025-0916-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251011_JSY_JSY052_SpatialModulation_Day3\TSeries-10112025-1441-002',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251013_JSY_JSY052_SpatialModulation_Day5\TSeries-10132025-1236-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251014_JSY_JSY052_SpatialModulation_Day6\TSeries-10142025-1647-003',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251015_JSY_JSY052_SpatialModulation_Day7\TSeries-10152025-1103-001',
+
+        # --- JSY054 ---
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251030_JSY_JSY054_SpMod_Day1\TSeries-10302025-1512-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251031_JSY_JSY054_SpMod_Day2\TSeries-10312025-1751-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251101_JSY_JSY054_SpMod_Day3\TSeries-11012025-1725-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251102_JSY_JSY054_SpMod_Day4\TSeries-11022025-1642-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251103_JSY_JSY054_SpMod_Day5\TSeries-11032025-1715-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251104_JSY_JSY054_SpMod_Day6\TSeries-11042025-1418-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251105_JSY_JSY054_SpMod_Day7\TSeries-11052025-1512-001',
+
+        # --- JSY055 (all missing within_session_smi) ---
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251205_JSY_JSY055_SpatialModulation_Day1\TSeries-12052025-1740-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251206_JSY_JSY055_SpatialModulation_Day2\TSeries-12062025-1810-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251207_JSY_JSY055_SpatialModulation_Day3\TSeries-12072025-1825-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251208_JSY_JSY055_SpatialModulation_Day4\TSeries-12082025-1633-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251209_JSY_JSY055_SpatialModualtion_Day5\TSeries-12092025-2000-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251210_JSY_JSY055_SpatialModulation_Day6\TSeries-12102025-1702-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251211_JSY_JSY055_SpatialModulation_Day7\TSeries-12112025-1631-001',
     ]
 
     print("\n" + "="*90)
     print(" BATCH: LAP-CHUNK WITHIN-SESSION SMI ANALYSIS ")
     print("="*90)
+    print(f"  chunk_size={chunk_size}, skip_existing={skip_existing}")
+
+    n_skipped = 0
+    n_done = 0
+    n_error = 0
 
     for idx, session_dir in enumerate(session_dirs):
         print("\n" + "-"*80)
-        print(f"[{idx+1}/{len(session_dirs)}] Processing:")
-        print(f"  {session_dir}")
+        print(f"[{idx+1}/{len(session_dirs)}] {session_dir}")
         print("-"*80)
 
         if not os.path.isdir(session_dir):
-            print(f"  Skipped — folder not found:\n   {session_dir}")
+            print("  Skipped — folder not found")
+            n_skipped += 1
             continue
 
+        if skip_existing:
+            existing = glob.glob(os.path.join(session_dir, "*_within_session_smi.h5"))
+            if existing:
+                print(f"  Skipped — results exist: {os.path.basename(existing[0])}")
+                n_skipped += 1
+                continue
+
         try:
-            # Check for preprocessed file
             preproc_files = glob.glob(os.path.join(session_dir, "*preproc*.h5"))
             if not preproc_files:
-                raise ValueError(f"No preprocessed .h5 file found in {session_dir}")
+                raise ValueError("No preprocessed .h5 file found")
 
             date_str, session_id = extract_date_and_session(session_dir)
             print(f"  Date: {date_str}, Session: {session_id}")
@@ -89,23 +136,19 @@ def batch_lapcchunk_analysis(chunk_size=20, min_chunk_size=10,
                 smoothing_sigma=smoothing_sigma,
                 save_figures=save_figures,
             )
-
             print("  COMPLETE")
+            n_done += 1
 
         except Exception as e:
-            print("\n  ERROR processing:")
-            print(f"  {session_dir}")
-            print("  Error:", e)
+            print(f"\n  ERROR: {e}")
             traceback.print_exc()
             print("  -> Continuing to next session...")
+            n_error += 1
 
     print("\n" + "="*90)
-    print(" BATCH COMPLETE — All sessions attempted")
+    print(f" BATCH COMPLETE — Done: {n_done}  Skipped: {n_skipped}  Errors: {n_error}")
     print("="*90)
 
 
-# -----------------------------------------------------------------------------
-# ENTRY POINT
-# -----------------------------------------------------------------------------
 if __name__ == "__main__":
-    batch_lapcchunk_analysis()
+    batch_lapcchunk_analysis(skip_existing=True)

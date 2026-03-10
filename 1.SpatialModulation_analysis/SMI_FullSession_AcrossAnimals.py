@@ -244,8 +244,16 @@ def load_all_animals_smi(parent_dir, smi_pattern="*_smi_results.h5"):
                             'mean_smi': lg.attrs.get('mean_smi', np.nan),
                             'mad_smi': lg.attrs.get('mad_smi', np.nan),
                             'SMI': smi_vals,
-                            'prop_modulated': prop_mod
+                            'prop_modulated': prop_mod,
+                            'preferred_positions': lg['preferred_positions'][:] if 'preferred_positions' in lg else np.array([]),
+                            'cell_indices': lg['cell_indices'][:].astype(int) if 'cell_indices' in lg else np.array([], dtype=int),
+                            'reliable_valid_cells': lg['reliable_valid_cells'][:].astype(int) if 'reliable_valid_cells' in lg else np.array([], dtype=int),
                         }
+
+                if 'cell_info' in f:
+                    session_data['med_coords'] = f['cell_info']['med_coords'][:] if 'med_coords' in f['cell_info'] else None
+                else:
+                    session_data['med_coords'] = None
 
                 all_data[animal_id][day] = session_data
 
@@ -1138,9 +1146,29 @@ def create_across_animals_visualizations(all_data, day1_results, temporal_result
     plt.tight_layout(rect=[0, 0, 1, 0.99])
 
     if save_path:
+        # Mega figure
         fig_path = os.path.join(save_path, 'across_animals_smi_analysis.png')
-        plt.savefig(fig_path, dpi=300, bbox_inches='tight')
+        plt.savefig(fig_path, dpi=200, bbox_inches='tight')
         print(f"\nSaved figure: {fig_path}")
+
+        # Individual panels
+        fig.canvas.draw()
+        renderer = fig.canvas.get_renderer()
+        panel_axes = [ax1, ax2, ax3, ax4, ax5, ax6, ax7, ax8, ax9]
+        panel_names = [
+            'smi_trajectory', 'smi_heatmap', 'day1_violin',
+            'early_vs_late', 'sup_vs_deep', 'gap_closure',
+            'slopes', 'L23_trajectories', 'summary',
+        ]
+        for ax, name in zip(panel_axes, panel_names):
+            try:
+                bbox = ax.get_tightbbox(renderer)
+                bbox = bbox.transformed(fig.dpi_scale_trans.inverted())
+                out = os.path.join(save_path, f'across_animals_panel_{name}.png')
+                fig.savefig(out, bbox_inches=bbox.expanded(1.15, 1.15), dpi=200)
+                print(f'  Saved: across_animals_panel_{name}.png')
+            except Exception:
+                pass
 
     return fig
 

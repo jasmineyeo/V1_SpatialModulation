@@ -762,58 +762,15 @@ if __name__ == "__main__":
     #                   vr_path='...' →  explicit path (use when VRlog is in a
     #                                    separate folder, as with older sessions).
 
-    BASE = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging'
+    BASE = r'F:\2P\unprocessed'
 
     sessions = [
         # --- Day 2 ---
         {
-            'suite2p_path': rf'{BASE}\250907_JSY_JSY044_SpaitalModulation_Day2\TSeries-09072025-1257-001',
+            'suite2p_path': rf'{BASE}\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-001',
             'recording_pairs': [
-                (rf'{BASE}\250907_JSY_JSY044_SpaitalModulation_Day2\TSeries-09072025-1257-001', None),
-                (rf'{BASE}\250907_JSY_JSY044_SpaitalModulation_Day2\TSeries-09072025-1257-002', None),
-            ]
-        },
-        # --- Day 3 ---
-        {
-            'suite2p_path': rf'{BASE}\250908_JSY_JSY044_SpatialModulation_Day3\TSeries-09082025-1540-001',
-            'recording_pairs': [
-                (rf'{BASE}\250908_JSY_JSY044_SpatialModulation_Day3\TSeries-09082025-1540-001', None),
-                (rf'{BASE}\250908_JSY_JSY044_SpatialModulation_Day3\TSeries-09082025-1540-002', None),
-                (rf'{BASE}\250908_JSY_JSY044_SpatialModulation_Day3\TSeries-09082025-1540-003', None),
-            ]
-        },
-        # --- Day 4 ---
-        {
-            'suite2p_path': rf'{BASE}\250909_JSY_JSY044_SpatialModulation_Day4\TSeries-09092025-1256-001',
-            'recording_pairs': [
-                (rf'{BASE}\250909_JSY_JSY044_SpatialModulation_Day4\TSeries-09092025-1256-001', None),
-                (rf'{BASE}\250909_JSY_JSY044_SpatialModulation_Day4\TSeries-09092025-1256-002', None),
-            ]
-        },
-        # --- Day 5 ---
-        {
-            'suite2p_path': rf'{BASE}\250910_JSY_JSY044_SpatialModulation_Day5\TSeries-09102025-1340-001',
-            'recording_pairs': [
-                (rf'{BASE}\250910_JSY_JSY044_SpatialModulation_Day5\TSeries-09102025-1340-001', None),
-                (rf'{BASE}\250910_JSY_JSY044_SpatialModulation_Day5\TSeries-09102025-1340-002', None),
-            ]
-        },
-        # --- Day 6 ---
-        {
-            'suite2p_path': rf'{BASE}\250911_JSY_JSY044_SpatialModulation_Day6\TSeries-09112025-1414-001',
-            'recording_pairs': [
-                (rf'{BASE}\250911_JSY_JSY044_SpatialModulation_Day6\TSeries-09112025-1414-001', None),
-                (rf'{BASE}\250911_JSY_JSY044_SpatialModulation_Day6\TSeries-09112025-1414-002', None),
-                (rf'{BASE}\250911_JSY_JSY044_SpatialModulation_Day6\TSeries-09112025-1414-003', None),
-            ]
-        },
-        # --- Day 7 ---
-        {
-            'suite2p_path': rf'{BASE}\250912_JSY_JSY044_SpatialModulation_Day7\TSeries-09122025-1334-001',
-            'recording_pairs': [
-                (rf'{BASE}\250912_JSY_JSY044_SpatialModulation_Day7\TSeries-09122025-1334-001', None),
-                (rf'{BASE}\250912_JSY_JSY044_SpatialModulation_Day7\TSeries-09122025-1334-002', None),
-                (rf'{BASE}\250912_JSY_JSY044_SpatialModulation_Day7\TSeries-09122025-1334-003', None),
+                (rf'{BASE}\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-001', None),
+                (rf'{BASE}\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-002', None),
             ]
         },
         # Add further days following the same pattern above.

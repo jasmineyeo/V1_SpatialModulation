@@ -2,7 +2,7 @@
 
 Scripts for analyzing spatial modulation responses in mouse V1 during virtual reality navigation tasks.
 
-**Author:** JSY | **Last Updated:** February 2026
+**Author:** JSY | **Last Updated:** March 2026
 
 ---
 
@@ -226,31 +226,77 @@ Pools lap-chunk data across all animals for population-level figures.
 
 ### 3. Landmark Preference Analysis
 
-**Purpose:** Identify cells responsive to visual landmarks in the VR corridor
+**Purpose:** Identify cells responsive to visual landmarks in the VR corridor and track how landmark selectivity develops across learning
 
 **Location:** `3.LandmarkPreference/`
 
+Mirrors the SMI pipeline structure — same 4-stage flow:
+
 ```
-1. 3.LandmarkPreference/LandmarkPrefernce_SingleSessionAnalysis.py
-   └─> Input: Single session data
-   └─> Output: Landmark-responsive cell identification, tuning curves
-   └─> Use case: Initial exploration of landmark selectivity
-
-2. 3.LandmarkPreference/LandmarkPreference_Batch.py
-   └─> Input: Multiple sessions (batch config)
-   └─> Output: Compiled landmark preference across recordings
-   └─> Use case: Process all sessions efficiently
-
-3. 3.LandmarkPreference/LandmarkPrefernce_CompareSessionsWithinAnimal.py
-   └─> Input: Batch output from one animal
-   └─> Output: Landmark preference stability across sessions
-   └─> Use case: Within-animal consistency analysis
-
-4. 3.LandmarkPreference/LandmarkPreference_AnalyzeAcrossAnimals.py
-   └─> Input: All animals' landmark data
-   └─> Output: Population statistics, layer-specific landmark tuning
-   └─> Use case: Final cross-animal summary
+Raw 2p data  →  Preprocess.py / Preprocess_MultipleRecordings.py
+                        │
+                        │  *preproc*.h5
+                        ▼
+        ┌──────────────────────────────────────────┐
+        │  LandmarkPrefernce_SingleSessionAnalysis  │
+        │  .py  (run_landmark_analysis)             │
+        └─────────────────┬────────────────────────┘
+                          │  called by ↓
+                          ▼
+        LandmarkPreference_Batch.py
+                          │  *_landmark_preferences.h5  (one per session)
+                          ▼
+        LandmarkPreference_WithinAnimal.py
+                          │  one animal, across days → {animal_dir}/LandmarkPreference/
+                          ▼
+        LandmarkPreference_AcrossAnimals.py       ← final population analysis
+                          │  → D:\V1_SpatialModulation\...\landmark_analysis\
 ```
+
+##### `LandmarkPrefernce_SingleSessionAnalysis.py`
+Core per-session analysis module. Not run directly — called by the batch script.
+- **Input:** Session folder containing `*preproc*.h5`
+- **Key function:** `run_landmark_analysis()` — identifies landmark-responsive cells per layer, computes within-session preference dynamics (preference_by_block), saves HDF5
+- **HDF5 structure:** `full_session/{layer}/landmark_proportions`, `landmark_counts`, `n_cells`; `dynamics/{layer}_preference_by_block [N_blocks, N_LM]`
+- **Output:** `{session_id}_landmark_preferences.h5` saved in each session TSeries folder
+
+##### `LandmarkPreference_Batch.py`
+Batch runner — loops over all 37 sessions across 7 animals (JSY040–JSY055) and calls the single-session analysis.
+- **Input:** Hardcoded session list (edit `session_dirs`)
+- **`skip_existing=True`** (default): skips sessions where `*_landmark_preferences.h5` already exists
+- **Output:** One `*_landmark_preferences.h5` per session
+
+##### `LandmarkPreference_WithinAnimal.py`
+Loads all `*_landmark_preferences.h5` files for one animal and produces 9 figures.
+- **Input:** Animal root directory (searched recursively)
+- **Output:** `{animal_dir}/LandmarkPreference/` — all figures saved there
+- **Figures:**
+  - A. `stacked_bars` — layer × day grid of horizontal stacked proportion bars
+  - B. `trajectory` — proportion per landmark per layer across days
+  - C. `day1_vs_last` — side-by-side stacked bars Day 1 vs last day
+  - D. `dominant_map` — color grid: winning landmark per layer per day
+  - E. `bias_index` — max(p) − 1/N per layer across days
+  - F. `entropy` — normalized Shannon entropy per layer across days
+  - G. `early_vs_late` — first 2 vs last 2 days grouped bar chart
+  - H. `within_session` — preference_by_block intra-session dynamics
+  - I. `summary` — bias index + entropy + JSD stability panel
+- **Metrics:** Landmark Bias Index `max(p) − 1/N` (0=uniform, →1=selective); Normalized Entropy (1=uniform, 0=fully selective); Jensen-Shannon Divergence (day-over-day stability)
+- **Run:** Set `ANIMAL = 'JSY054'` or `None` to process all animals
+
+##### `LandmarkPreference_AcrossAnimals.py`
+Loads `*_landmark_preferences.h5` from all animals and runs pooled population-level analysis.
+- **Input:** All animal directories (auto-searched)
+- **Output:** `D:\V1_SpatialModulation\2p\V1_prism\landmark_analysis\`
+- **Figures:**
+  - A. `population_trajectory` — mean±SEM proportion per landmark per layer
+  - B. `bias_heatmap` — layers × days, color = mean bias index
+  - C. `day1_distribution` — mean±SEM + individual animal dots on Day 1
+  - D. `early_vs_late` — pooled with Mann-Whitney significance stars
+  - E. `entropy_trajectory` — mean±SEM entropy per layer
+  - F. `per_animal_L23` — individual animal L2/3 bias trajectories + bold mean
+  - G. `sup_vs_deep` — superficial (L2/3+L4) vs deep (L5+L6) bias
+  - H. `stats_table` — Kruskal-Wallis + Mann-Whitney + Cliff's delta (PNG + CSV)
+  - I. `summary` — combined bias + entropy panel
 
 ---
 
@@ -450,6 +496,18 @@ python 1.SpatialModulation_analysis/SMI_LapChunk_WithinAnimal.py
 
 # 3. Population-level analysis across animals (edit animals list in script)
 python 1.SpatialModulation_analysis/SMI_LapChunk_AcrossAnimals.py
+```
+
+### Running Landmark Preference Analysis
+```bash
+# 1. Batch landmark analysis across all sessions (edit session_dirs if needed)
+python 3.LandmarkPreference/LandmarkPreference_Batch.py
+
+# 2. Within-animal analysis (set ANIMAL = 'JSY054' or None for all)
+python 3.LandmarkPreference/LandmarkPreference_WithinAnimal.py
+
+# 3. Population-level analysis across all animals
+python 3.LandmarkPreference/LandmarkPreference_AcrossAnimals.py
 ```
 
 ### Running PCA Pipeline

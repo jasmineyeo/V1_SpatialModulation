@@ -274,7 +274,8 @@ def find_optimal_temporal_offset(twop_dict, vr_dict, framerate, offset_range=Non
         Recommended optimal offset (consensus across metrics)
     """
     if offset_range is None:
-        offset_range = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
+        offset_range = [0, 1, 2, 3, 4, 5, 6, 7, 8]
+        # offset_range = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     
     # print("Finding optimal temporal offset based on tuning curve sharpness...")
     # print(f"Testing offsets: {offset_range} frames")

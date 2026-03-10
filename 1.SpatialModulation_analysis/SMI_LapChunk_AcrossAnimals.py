@@ -108,7 +108,7 @@ def load_within_session_results(h5_path):
     return data
 
 
-def load_all_animals(parent_dir, focus_days=[1, 2, 3]):
+def load_all_animals(parent_dir, focus_days=list(range(1, 8))):
     """
     Load Script 1 outputs from all animals for specified days.
     
@@ -571,7 +571,7 @@ def create_summary_tables(pooled_results, first_vs_last_results, save_path=None)
 # MAIN WORKFLOW
 # ============================================================================
 
-def run_across_animals_analysis_revised(parent_dir, save_path=None, focus_days=[1, 2, 3]):
+def run_across_animals_analysis_revised(parent_dir, save_path=None, focus_days=list(range(1, 8))):
     """
     REVISED across-animals analysis workflow.
     
@@ -657,6 +657,6 @@ if __name__ == "__main__":
     parent_dir = r"D:\V1_SpatialModulation\2p\V1_prism"
     save_dir = os.path.join(parent_dir, "across_animals_within_session_REVISED")
     
-    results = run_across_animals_analysis_revised(parent_dir, save_dir, focus_days=[1, 2, 3])
+    results = run_across_animals_analysis_revised(parent_dir, save_dir)
     
     plt.show()

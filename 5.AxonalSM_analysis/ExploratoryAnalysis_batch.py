@@ -32,13 +32,23 @@ from helper import files
 # ============================================================================
 
 DATA_FILEPATHS = [
-    # r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260202_JSY_JSY061_SpMod_AxonalImaging_Day1\TSeries-02022026-1804-001",
-    r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260203_JSY_JSY061_SpMod_AxonalImaging_Day2\TSeries-02032026-1751-002",
-    r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260204_JSY_JSY061_SpMod_AxonalImaging_Day3\TSeries-02042026-2009-001",
-    r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260205_JSY_JSY061_SpMod_AxonalImaging_Day4\TSeries-02052026-1833-002",
-    r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260206_JSY_JSY061_SpMod_AxonalImaging_Day5\TSeries-02062026-1850-001",
-    r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260207_JSY_JSY061_SpMod_AxonalImaging_Day6\TSeries-02072026-2023-001",
-    r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260208_JSY_JSY061_SpMod_AxonalImaging_Day7\TSeries-02082026-1826-001",
+
+            r"D:\V1_SpatialModulation\2p\V1_axonal\JSY060_ChronicImaging_prism\260225_JSY_JSY060_LongitudinalImaging_Axonal_Prism_Day1\TSeries-02252026-0903-001",
+            r"D:\V1_SpatialModulation\2p\V1_axonal\JSY060_ChronicImaging_prism\260226_JSY_JSY060_LongitudinalImaging_Axonal_Prism_Day2\TSeries-02262026-0915-001",
+            r"D:\V1_SpatialModulation\2p\V1_axonal\JSY060_ChronicImaging_prism\260227_JSY_JSY060_LongitudinalImaging_Axonal_Prism_Day3\TSeries-02262026-1253-001",
+            r"D:\V1_SpatialModulation\2p\V1_axonal\JSY060_ChronicImaging_prism\260228_JSY_JSY060_LongitudinalImaging_Axonal_Prism_Day4\TSeries-02282026-0919-001",
+            r"D:\V1_SpatialModulation\2p\V1_axonal\JSY060_ChronicImaging_prism\260301_JSY_JSY060_LongitudinalImaging_Axonal_Prism_Day5\TSeries-03012026-0914-002",
+            r"D:\V1_SpatialModulation\2p\V1_axonal\JSY060_ChronicImaging_prism\260302_JSY_JSY060_LongitudinalImaging_Axonal_Prism_Day6\TSeries-03022026-1226-001",
+            r"D:\V1_SpatialModulation\2p\V1_axonal\JSY060_ChronicImaging_prism\260303_JSY_JSY060_LongitudinalImaging_Axonal_Prism_Day7\TSeries-03032026-0817-001",
+
+
+    # # r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260202_JSY_JSY061_SpMod_AxonalImaging_Day1\TSeries-02022026-1804-001",
+    # r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260203_JSY_JSY061_SpMod_AxonalImaging_Day2\TSeries-02032026-1751-002",
+    # r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260204_JSY_JSY061_SpMod_AxonalImaging_Day3\TSeries-02042026-2009-001",
+    # r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260205_JSY_JSY061_SpMod_AxonalImaging_Day4\TSeries-02052026-1833-002",
+    # r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260206_JSY_JSY061_SpMod_AxonalImaging_Day5\TSeries-02062026-1850-001",
+    # r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260207_JSY_JSY061_SpMod_AxonalImaging_Day6\TSeries-02072026-2023-001",
+    # r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260208_JSY_JSY061_SpMod_AxonalImaging_Day7\TSeries-02082026-1826-001",
 ]
 
 # Analysis parameters

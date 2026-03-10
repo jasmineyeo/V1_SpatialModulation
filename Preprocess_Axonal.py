@@ -20,7 +20,8 @@ import os
 import numpy as np
 import datetime
 from helper import dataLoader, files
-from helper import SpikeSmoothing, ReliabilityTesting as RT, SpatialDiscretization as SD, BehavioralDataFiltering as DF, ResponseVisualization as RV    
+from helper import SpikeSmoothing, ReliabilityTesting as RT, SpatialDiscretization as SD, BehavioralDataFiltering as DF, ResponseVisualization as RV
+from helper.SkaggsSI import run_spatial_information_analysis
 from matplotlib import rcParams
 import matplotlib.pyplot as plt
 
@@ -148,8 +149,21 @@ def convert_ops_to_serializable(ops_data):
     
     return serializable_ops
 
+def _infer_imaging_type(twop_filepath):
+    """Infer imaging type from the session path."""
+    p = twop_filepath.lower()
+    if 'window' in p:
+        return 'L1_axonal'
+    if 'prism' in p:
+        return 'L6_axonal'
+    return 'unknown'
+
+
 def preprocess_2pVR(twop_filepath):
-    
+
+    imaging_type = _infer_imaging_type(twop_filepath)
+    print(f"Imaging type: {imaging_type}")
+
     # Find a file that has "VRlog*.txt" in the twop_filepath directory
     import glob
     vrlog_pattern = os.path.join(twop_filepath, "VRlog*.txt")
@@ -235,8 +249,7 @@ def preprocess_2pVR(twop_filepath):
 
     print(f"Found {np.sum(reliable_cells)} reliable cells out of {len(reliable_cells)}")
     print(f"Found {np.sum(combined_reliable)} combined_reliable cells out of {len(combined_reliable)}")
-    
-    
+
     # # Option 2: Plot with both heatmap and trial-averaged activity
     # fig2 = RT.plot_reliable_cells_side_by_side(
     #     normalized_spatial_activity,
@@ -293,15 +306,50 @@ def preprocess_2pVR(twop_filepath):
     assert lap_ends[-1] == len(temporal_speed), "Lap boundaries don't match data length!"
     
     print("\n✓ All dimensions verified!")
-        
+
+    # 4b. Skaggs SI — permissive activity filter then shuffle significance test
+    print("\n" + "="*80)
+    print("SKAGGS SPATIAL INFORMATION — ALTERNATIVE CELL SELECTION")
+    print("="*80)
+
+    mean_activity   = np.mean(temporal_spikes, axis=1)
+    active_fraction = np.mean(temporal_spikes > 0, axis=1)
+    active_axons    = (mean_activity > 0.05) & (active_fraction > 0.01)
+    print(f"Active axons (permissive filter): {np.sum(active_axons)} / {len(active_axons)}")
+
+    si_results = run_spatial_information_analysis(
+        temporal_spikes, temporal_location,
+        active_mask=active_axons,
+        bin_centers=bin_centers,
+        n_shuffles=200,
+        alpha=0.05,
+        smooth_sigma=1.5,
+        verbose=True,
+    )
+    si_significant_cells = si_results['is_significant']
+    print(f"SI-significant: {np.sum(si_significant_cells)} / {np.sum(active_axons)} active")
+
+    # Compare the two selection methods
+    print("\nComparison:")
+    print(f"  combined_reliable only : {np.sum(combined_reliable & ~si_significant_cells)}")
+    print(f"  si_significant only    : {np.sum(si_significant_cells & ~combined_reliable)}")
+    print(f"  overlap (both)         : {np.sum(combined_reliable & si_significant_cells)}")
+
+    combined_reliable_only = combined_reliable & ~si_significant_cells
+    si_significant_only = si_significant_cells & ~combined_reliable
+    
     # 5. Response Plot - plotting activity of all responsive cells
     combinedreliablecell_save_directory = os.path.join(twop_filepath, 'combined_reliable_cell_plots')
     reliablecell_save_directory = os.path.join(twop_filepath, 'reliable_cell_plots')
+    si_significant_cell_save_directory = os.path.join(twop_filepath, 'si_significant_cell_plots')
     os.makedirs(combinedreliablecell_save_directory, exist_ok=True)
     os.makedirs(reliablecell_save_directory, exist_ok=True)
-    
+    os.makedirs(si_significant_cell_save_directory, exist_ok=True)
+    from scipy.ndimage import gaussian_filter1d
+    plot_activity = gaussian_filter1d(normalized_spatial_activity, sigma=1.5, axis=2)
+
     pdf_path, stats = RT.plot_individual_reliable_cells_to_pdf(
-        spatial_activity=normalized_spatial_activity,
+        spatial_activity=plot_activity,
         reliable_cells=combined_reliable,
         save_directory=combinedreliablecell_save_directory,
         avg_cc=avg_cc,
@@ -312,12 +360,33 @@ def preprocess_2pVR(twop_filepath):
         cells_per_page=4
     )
 
-    fig1, _ = RV.create_response_plot(normalized_spatial_activity, reliable_cells, clim=(0, 1))
+    pdf_path, stats = RT.plot_individual_reliable_cells_to_pdf(
+        spatial_activity=plot_activity,
+        reliable_cells=si_significant_cells,
+        save_directory=si_significant_cell_save_directory,
+        avg_cc=avg_cc,
+        cohen_d=cohens_d,
+        bin_centers=bin_centers,
+        normalize=True,
+        dpi=150,
+        cells_per_page=4
+    )
+
+    fig1, _ = RV.create_response_plot(plot_activity, reliable_cells, clim=(0, 1))
     fig1.savefig(os.path.join(reliablecell_save_directory, 'reliable_cells.png'), dpi=150)
 
-    fig2, _ = RV.create_response_plot(normalized_spatial_activity, combined_reliable, clim=(0, 1))
+    fig2, _ = RV.create_response_plot(plot_activity, combined_reliable, clim=(0, 1))
     fig2.savefig(os.path.join(combinedreliablecell_save_directory, 'combined_reliable_cells.png'), dpi=150)
     
+    fig3, _ = RV.create_response_plot(plot_activity, si_significant_cells, clim=(0, 1))
+    fig3.savefig(os.path.join(twop_filepath, 'si_significant_cells.png'), dpi=150)
+    
+    fig4, _ = RV.create_response_plot(plot_activity, combined_reliable_only, clim=(0, 1))
+    fig4.savefig(os.path.join(twop_filepath, 'combined_reliable_only.png'), dpi=150)
+    
+    fig5, _ = RV.create_response_plot(plot_activity, si_significant_only, clim=(0, 1))
+    fig5.savefig(os.path.join(twop_filepath, 'si_significant_only.png'), dpi=150)
+
     # Calculate median coordinates for each cell (needed for combining datasets)
     med_coords = np.zeros((len(twop_dict['stat']), 2))
     for i, cell_stat in enumerate(twop_dict['stat']):
@@ -335,6 +404,8 @@ def preprocess_2pVR(twop_filepath):
         'norm_spatial_activity': normalized_spatial_activity,
         'reliable_cells': reliable_cells.astype(bool),
         'combined_reliable': combined_reliable.astype(bool),
+        'si_significant_cells': si_significant_cells.astype(bool),
+        'active_axons': active_axons.astype(bool),
         'avg_cc': avg_cc.astype(np.float64),
         'cohen_d': cohens_d.astype(np.float64),
         'bin_centers': bin_centers.astype(np.float64),
@@ -350,6 +421,7 @@ def preprocess_2pVR(twop_filepath):
         'lap_ends': lap_ends.astype(np.int32),
         
         # Metadata
+        'imaging_type': imaging_type,
         'twop_filepath': str(twop_filepath),
         'vr_filepath': str(vr_filepath),
         'processing_timestamp': datetime.datetime.now().isoformat(),
@@ -415,20 +487,102 @@ def preprocess_2pVR(twop_filepath):
     return preprocessed_dict
 
 if __name__ == "__main__":
-    
+
+    from Preprocess_MultipleRecordings import preprocess_2pVR_multi
+
+    # -----------------------------------------------------------------------
+    # single recordings → preprocess_2pVR
+    # two recordings combined in suite2p → preprocess_2pVR_multi
+    # -----------------------------------------------------------------------
+
+    # BASE = r'D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window'
+
+    # # Single-recording sessions
+    # twop_filepaths = [
+    #     rf'{BASE}\260202_JSY_JSY061_SpMod_AxonalImaging_Day1\TSeries-02022026-1804-001',
+    #     # Day 2 handled separately below (multi-recording)
+    #     rf'{BASE}\260204_JSY_JSY061_SpMod_AxonalImaging_Day3\TSeries-02042026-2009-001',
+    #     rf'{BASE}\260205_JSY_JSY061_SpMod_AxonalImaging_Day4\TSeries-02052026-1833-002',
+    #     rf'{BASE}\260206_JSY_JSY061_SpMod_AxonalImaging_Day5\TSeries-02062026-1850-001',
+    #     rf'{BASE}\260207_JSY_JSY061_SpMod_AxonalImaging_Day6\TSeries-02072026-2023-001',
+    #     rf'{BASE}\260208_JSY_JSY061_SpMod_AxonalImaging_Day7\TSeries-02082026-1826-001',
+    # ]
+    # twop_filepaths = []
+
+    # # Day 2 — if two recordings merged in suite2p
+    # day2_suite2p_path = rf'{BASE}\260203_JSY_JSY061_SpMod_AxonalImaging_Day2\TSeries-02032026-1751-001'
+    # day2_recording_pairs = [
+    #     (rf'{BASE}\260203_JSY_JSY061_SpMod_AxonalImaging_Day2\TSeries-02032026-1751-001', None),
+    #     (rf'{BASE}\260203_JSY_JSY061_SpMod_AxonalImaging_Day2\TSeries-02032026-1751-002', None),
+    # ]
+    BASE = r'D:\V1_SpatialModulation\2p\V1_axonal\JSY060_ChronicImaging_prism'
+
     twop_filepaths = [
-        # r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260202_JSY_JSY061_SpMod_AxonalImaging_Day1\TSeries-02022026-1804-001"
+        # --- JSY061 ---
+        rf'{BASE}\260225_JSY_JSY060_LongitudinalImaging_Axonal_Prism_Day1\TSeries-02252026-0903-001',
+        rf'{BASE}\260226_JSY_JSY060_LongitudinalImaging_Axonal_Prism_Day2\TSeries-02262026-0915-001',  # multi-recording, preproc saved here
+        rf'{BASE}\260227_JSY_JSY060_LongitudinalImaging_Axonal_Prism_Day3\TSeries-02262026-1253-001',
+        rf'{BASE}\260228_JSY_JSY060_LongitudinalImaging_Axonal_Prism_Day4\TSeries-02282026-0919-001',
+        rf'{BASE}\260301_JSY_JSY060_LongitudinalImaging_Axonal_Prism_Day5\TSeries-03012026-0914-002',
+        rf'{BASE}\260302_JSY_JSY060_LongitudinalImaging_Axonal_Prism_Day6\TSeries-03022026-1226-001',
+        rf'{BASE}\260303_JSY_JSY060_LongitudinalImaging_Axonal_Prism_Day7\TSeries-03032026-0817-001',
+    ]
 
-        # r'D:\V1_SpatialModulation\2p\V1_window\JSY061_ChronicImaging_Axonal\260202_JSY_JSY061_SpMod_AxonalImaging_Day1\TSeries-02022026-1804-001',
-        r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251014_JSY_JSY052_SpatialModulation_Day6\TSeries-10142025-1647-003',
-        # r'F:\2P\unprocessed\251123_JSY_JSY044_SpMod_OpenLoopVR_Stationary\TSeries-11232025-1222-001',
-        # r'D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260205_JSY_JSY061_SpMod_AxonalImaging_Day4\TSeries-02052026-1833-002',
-        # r'D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260206_JSY_JSY061_SpMod_AxonalImaging_Day5\TSeries-02062026-1850-001',
-        # r'D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260207_JSY_JSY061_SpMod_AxonalImaging_Day6\TSeries-02072026-2023-001',
-        # r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260208_JSY_JSY061_SpMod_AxonalImaging_Day7\TSeries-02082026-1826-001"
-        ]
 
-    
+    # -----------------------------------------------------------------------
+    # Process single-recording sessions
+    # -----------------------------------------------------------------------
+    n_total = len(twop_filepaths)
+    successful = []
+    failed = []
+
+    for i, twop_filepath in enumerate(twop_filepaths):
+        print("\n" + "=" * 80)
+        print(f"Processing {i+1}/{n_total}: {os.path.basename(twop_filepath)}")
+        print("=" * 80)
+
+        try:
+            preprocess_2pVR(twop_filepath)
+            successful.append(twop_filepath)
+            print(f"Successfully processed: {os.path.basename(twop_filepath)}")
+        except Exception as e:
+            failed.append((twop_filepath, str(e)))
+            print(f"FAILED: {os.path.basename(twop_filepath)}")
+            print(f"Error: {e}")
+
+    # -----------------------------------------------------------------------
+    # Process Day 2 (multi-recording)
+    # -----------------------------------------------------------------------
+    print("\n" + "=" * 80)
+    print(f"Processing Day 2 (multi-recording): {os.path.basename(day2_suite2p_path)}")
+    print("=" * 80)
+
+    try:
+        preprocess_2pVR_multi(day2_suite2p_path, day2_recording_pairs)
+        successful.append(day2_suite2p_path)
+        print("Successfully processed Day 2.")
+    except Exception as e:
+        failed.append((day2_suite2p_path, str(e)))
+        print(f"FAILED Day 2: {e}")
+
+    # -----------------------------------------------------------------------
+    # Summary
+    # -----------------------------------------------------------------------
+    print("\n" + "=" * 80)
+    print("BATCH PROCESSING COMPLETE")
+    print("=" * 80)
+    print(f"Successful: {len(successful)}/{n_total + 1}")
+    print(f"Failed:     {len(failed)}/{n_total + 1}")
+
+    if failed:
+        print("\nFailed files:")
+        for filepath, error in failed:
+            print(f"  - {os.path.basename(filepath)}: {error}")
+
+
+    # -----------------------------------------------------------------------
+    # Legacy / scratch paths (kept for reference)
+    # -----------------------------------------------------------------------
     # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\250620_JSY_JSY040_SpatialModulation_Day1_V1Prism\TSeries-06202025-1515-001'
     # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\250622_JSY_JSY040_SpatialModulation_Day3_V1Prism\TSeries-06222025-1550-001'
     
@@ -515,37 +669,3 @@ if __name__ == "__main__":
     
     
 
-    # ==========================================================================
-    # Process all files in a loop
-    # ==========================================================================
-    n_total = len(twop_filepaths)
-    successful = []
-    failed = []
-
-    for i, twop_filepath in enumerate(twop_filepaths):
-        print("\n" + "=" * 80)
-        print(f"Processing {i+1}/{n_total}: {os.path.basename(twop_filepath)}")
-        print("=" * 80)
-
-        try:
-            preprocess_2pVR(twop_filepath)
-            successful.append(twop_filepath)
-            print(f"Successfully processed: {os.path.basename(twop_filepath)}")
-        except Exception as e:
-            failed.append((twop_filepath, str(e)))
-            print(f"FAILED: {os.path.basename(twop_filepath)}")
-            print(f"Error: {e}")
-
-    # ==========================================================================
-    # Summary
-    # ==========================================================================
-    print("\n" + "=" * 80)
-    print("BATCH PROCESSING COMPLETE")
-    print("=" * 80)
-    print(f"Successful: {len(successful)}/{n_total}")
-    print(f"Failed: {len(failed)}/{n_total}")
-
-    if failed:
-        print("\nFailed files:")
-        for filepath, error in failed:
-            print(f"  - {os.path.basename(filepath)}: {error}")
