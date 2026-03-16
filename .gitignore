@@ -161,3 +161,4 @@ cython_debug/
 V1_SpatialModulation-1/
 *.png
 *.pkl
+*.svg
