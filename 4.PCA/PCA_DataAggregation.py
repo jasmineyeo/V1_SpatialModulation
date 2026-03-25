@@ -53,13 +53,13 @@ from helper.SpatialModulationIndexLayerSpecific import SpatialModulationIndexLay
 # ============================================================================
 
 # Animal to analyze
-ANIMAL_ID = "JSY052"
+ANIMAL_ID = "JSY055"
 
 # Base directory containing all session folders for this animal
-BASE_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging"
+BASE_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging"
 
 # Output directory for PCA data file
-OUTPUT_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\PCA"
+OUTPUT_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\PCA"
 
 # Landmark configuration (must match your landmark analysis)
 LANDMARK_POSITIONS = [25, 55, 85, 115]  # cm
