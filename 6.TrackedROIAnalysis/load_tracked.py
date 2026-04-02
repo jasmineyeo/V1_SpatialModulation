@@ -229,7 +229,8 @@ def load_preproc_session(preproc_file):
         sa   = f['spatial_activity'][:]
         nsa  = f['norm_spatial_activity'][:]
         bc   = f['bin_centers'][:]
-        rel  = f['combined_reliable'][:].astype(bool)
+        rel  = f['reliable_cells'][:].astype(bool)
+        # rel  = f['combined_reliable'][:].astype(bool)
         cc   = f['avg_cc'][:].astype(float)   if 'avg_cc'   in f else np.full(sa.shape[0], np.nan)
         cd   = f['cohen_d'][:].astype(float)  if 'cohen_d'  in f else np.full(sa.shape[0], np.nan)
         med  = f['med_coords'][:].astype(float) if 'med_coords' in f else np.zeros((sa.shape[0], 2))
@@ -294,6 +295,54 @@ def build_matrix(tracked_matrix, day_labels, file_map, extractor_fn,
             print(f"  WARNING: failed to extract {day}: {e}")
 
     return matrix
+
+
+# ============================================================
+# Session filtering
+# ============================================================
+
+def filter_to_analysis_days(tracked_matrix, day_labels, session_dirs, analysis_days):
+    """
+    Restrict tracked_matrix to a chosen subset of sessions, keeping only
+    cells that have a valid ROI (>= 0) in every one of those sessions.
+
+    Parameters
+    ----------
+    tracked_matrix : np.ndarray (n_cells, n_sessions)
+    day_labels     : list of str  — column labels for tracked_matrix
+    session_dirs   : dict {day_label: tseries_path}
+    analysis_days  : list of str  — days to keep, e.g. ['Day2','Day3','Day5']
+                     Pass None to return everything unchanged.
+
+    Returns
+    -------
+    tracked_matrix : filtered (n_valid_cells, n_analysis_days)
+    day_labels     : list of str, len = n_analysis_days
+    session_dirs   : dict, keys = analysis_days only
+    """
+    if analysis_days is None:
+        return tracked_matrix, day_labels, session_dirs
+
+    missing = [d for d in analysis_days if d not in day_labels]
+    if missing:
+        raise ValueError(f"analysis_days contains days not in tracked data: {missing}\n"
+                         f"Available: {day_labels}")
+
+    cols = [day_labels.index(d) for d in analysis_days]
+
+    # Keep only rows where every chosen session has a valid ROI
+    valid_mask = np.all(tracked_matrix[:, cols] >= 0, axis=1)
+    n_before = tracked_matrix.shape[0]
+    n_after  = valid_mask.sum()
+
+    filtered_matrix = tracked_matrix[np.ix_(valid_mask, cols)]
+    filtered_dirs   = {d: session_dirs[d] for d in analysis_days if d in session_dirs}
+
+    print(f"  filter_to_analysis_days: {analysis_days}")
+    print(f"  Cells before: {n_before}  →  after: {n_after} "
+          f"(dropped {n_before - n_after} missing a valid ROI in ≥1 session)")
+
+    return filtered_matrix, list(analysis_days), filtered_dirs
 
 
 # ============================================================

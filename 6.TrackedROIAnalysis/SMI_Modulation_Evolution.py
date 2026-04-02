@@ -22,7 +22,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.stats as stats
 from load_tracked import (
-    load_tracking, find_smi_files, find_files_from_tracking,
+    load_tracking, filter_to_analysis_days, find_smi_files, find_files_from_tracking,
     assign_layers_from_smi, load_smi_session, build_matrix,
     parse_day_numbers, layer_mean_sem, animal_id_from_path,
     LAYER_ORDER, LAYER_COLORS, report_found_files,
@@ -35,6 +35,8 @@ from load_tracked import (
 ROI_TRACKING_FILE = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\roi_tracking_results.h5"
 ANIMAL_DIR        = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging"
 REFERENCE_DAY     = "Day2"
+ANALYSIS_DAYS     = None     # e.g. ['Day2','Day3','Day4','Day5','Day6','Day7']
+                             # None = use all tracked sessions
 
 SMI_THRESHOLD     = 0.1          # above = spatially modulated
 OUTPUT_DIR        = None         # None -> same folder as this script
@@ -407,6 +409,8 @@ def main():
     # Load
     print("\n[1] Loading tracking matrix...")
     tracked_matrix, day_labels, session_dirs = load_tracking(ROI_TRACKING_FILE)
+    tracked_matrix, day_labels, session_dirs = filter_to_analysis_days(
+        tracked_matrix, day_labels, session_dirs, ANALYSIS_DAYS)
     session_days = parse_day_numbers(day_labels)
 
     print("\n[2] Finding SMI result files...")

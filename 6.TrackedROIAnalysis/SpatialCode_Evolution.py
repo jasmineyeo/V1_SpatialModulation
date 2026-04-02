@@ -27,9 +27,9 @@ import matplotlib.colors as mcolors
 import scipy.stats as stats
 from scipy.ndimage import gaussian_filter1d
 from load_tracked import (
-    load_tracking, find_smi_files, find_preproc_files, find_files_from_tracking,
-    assign_layers_from_smi, load_smi_session, load_preproc_session,
-    build_matrix, parse_day_numbers, layer_mean_sem,
+    load_tracking, filter_to_analysis_days, find_smi_files, find_preproc_files,
+    find_files_from_tracking, assign_layers_from_smi, load_smi_session,
+    load_preproc_session, build_matrix, parse_day_numbers, layer_mean_sem,
     animal_id_from_path, LAYER_ORDER, LAYER_COLORS, report_found_files,
 )
 
@@ -41,6 +41,8 @@ from load_tracked import (
 ROI_TRACKING_FILE = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\roi_tracking_JSY054.h5"
 ANIMAL_DIR        = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging"
 REFERENCE_DAY     = "Day1"
+ANALYSIS_DAYS     = None     # e.g. ['Day2','Day3','Day4','Day5','Day6','Day7']
+                             # None = use all tracked sessions
 
 
 # Landmark positions in cm (VR corridor) — adjust to match your setup
@@ -508,6 +510,8 @@ def main():
     # Load
     print("\n[1] Loading tracking matrix...")
     tracked_matrix, day_labels, session_dirs = load_tracking(ROI_TRACKING_FILE)
+    tracked_matrix, day_labels, session_dirs = filter_to_analysis_days(
+        tracked_matrix, day_labels, session_dirs, ANALYSIS_DAYS)
     session_days = parse_day_numbers(day_labels)
 
     print("\n[2] Finding data files...")

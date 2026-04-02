@@ -53,13 +53,13 @@ from helper.SpatialModulationIndexLayerSpecific import SpatialModulationIndexLay
 # ============================================================================
 
 # Animal to analyze
-ANIMAL_ID = "JSY055"
+ANIMAL_ID = "JSY054"
 
 # Base directory containing all session folders for this animal
-BASE_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging"
+BASE_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging"
 
 # Output directory for PCA data file
-OUTPUT_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\PCA"
+OUTPUT_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\PCA"
 
 # Landmark configuration (must match your landmark analysis)
 LANDMARK_POSITIONS = [25, 55, 85, 115]  # cm
@@ -78,6 +78,25 @@ TRIM_END_CM = 125    # End of analysis window (matches L4 window end)
 EXCLUDE_FIRST_BINS = 5  # Bins to exclude for onset filtering
 EXCLUDE_LAST_BINS = 5   # Bins to exclude for reward filtering
 SMOOTHING_SIGMA = 1.0   # Gaussian smoothing for profiles
+
+# Landmark alignment parameters
+ALIGN_PROFILES = True   # Align each cell to its preferred landmark before saving
+
+# Alignment method:
+#   'template_correlation' — shift each cell to maximise Pearson r with a
+#                            4-Gaussian template; aligns ALL cells including onset cells.
+#                            Non-circular (zero-padded). Matches MATLAB pipeline.
+#   'per_landmark'         — shift each cell's peak to its canonical landmark position;
+#                            cells with preferred_landmark == -1 are left unshifted.
+ALIGN_METHOD = 'template_correlation'
+
+# Whether to re-z-score profiles after alignment.
+#   False — magnitude preserved (matches MATLAB TreadmillResponseSorter)
+#   True  — shape-only PCA
+ZSCORE_AFTER_ALIGNMENT = False
+
+# Gaussian width for each landmark peak in the 4-Gaussian template (cm)
+TEMPLATE_SIGMA_CM = 8.0
 
 
 # ============================================================================
@@ -344,6 +363,92 @@ def zscore_profiles(profiles):
 
 
 # ============================================================================
+# LANDMARK ALIGNMENT FUNCTIONS
+# ============================================================================
+
+def _shift_profile_noncircular(profile, shift_bins):
+    """Shift profile by shift_bins with zero-padding (no wrap-around)."""
+    shifted = np.zeros_like(profile)
+    if shift_bins > 0:
+        shifted[shift_bins:] = profile[:-shift_bins]
+    elif shift_bins < 0:
+        shifted[:shift_bins] = profile[-shift_bins:]
+    else:
+        shifted = profile.copy()
+    return shifted
+
+
+def create_4gaussian_template(bin_centers, landmark_positions, sigma_cm=8.0):
+    """Sum of 4 Gaussians centred at each landmark position."""
+    template = np.zeros(len(bin_centers))
+    for lm_pos in landmark_positions:
+        template += np.exp(-0.5 * ((bin_centers - lm_pos) / sigma_cm) ** 2)
+    return template
+
+
+def align_profiles_template_correlation(profiles, bin_centers, landmark_positions,
+                                         sigma_cm=8.0, zscore_after=False):
+    """
+    Align each cell's profile by shifting to maximise Pearson correlation
+    with a 4-Gaussian template (one peak per landmark).
+    Non-circular, zero-padded shifts only.
+
+    Parameters
+    ----------
+    profiles           : (n_cells, n_bins) array
+    bin_centers        : (n_bins,) array in cm
+    landmark_positions : list of float
+    sigma_cm           : float — Gaussian width for template peaks
+    zscore_after       : bool  — if False, magnitude preserved (MATLAB-like)
+
+    Returns
+    -------
+    aligned          : (n_cells, n_bins) array
+    optimal_shifts   : (n_cells,) int array
+    max_correlations : (n_cells,) float array
+    """
+    from scipy.stats import pearsonr
+
+    template = create_4gaussian_template(bin_centers, landmark_positions, sigma_cm)
+    n_cells, n_bins = profiles.shape
+    bin_spacing = float(np.mean(np.diff(bin_centers)))
+
+    print("\n  Aligning profiles via template-correlation (non-circular)...")
+    print(f"    Template sigma: {sigma_cm} cm  |  zscore_after: {zscore_after}")
+
+    aligned          = profiles.copy()
+    optimal_shifts   = np.zeros(n_cells, dtype=int)
+    max_correlations = np.zeros(n_cells)
+
+    for cell_idx in range(n_cells):
+        profile    = profiles[cell_idx]
+        best_corr  = -np.inf
+        best_shift = 0
+        for shift in range(-n_bins // 2, n_bins // 2):
+            candidate = _shift_profile_noncircular(profile, shift)
+            corr, _   = pearsonr(candidate, template)
+            if corr > best_corr:
+                best_corr, best_shift = corr, shift
+        aligned[cell_idx]          = _shift_profile_noncircular(profile, best_shift)
+        optimal_shifts[cell_idx]   = best_shift
+        max_correlations[cell_idx] = best_corr
+
+    if zscore_after:
+        aligned = zscore_profiles(aligned)
+
+    shifts_cm = optimal_shifts * bin_spacing
+    shifted   = optimal_shifts != 0
+    print(f"    Cells shifted: {np.sum(shifted)}")
+    if np.any(shifted):
+        print(f"    Shift stats: mean={np.mean(shifts_cm[shifted]):.1f} cm, "
+              f"std={np.std(shifts_cm[shifted]):.1f} cm")
+    print(f"    Max-corr stats: mean={np.mean(max_correlations):.3f}, "
+          f"min={np.min(max_correlations):.3f}")
+
+    return aligned, optimal_shifts, max_correlations
+
+
+# ============================================================================
 # MAIN AGGREGATION FUNCTION
 # ============================================================================
 
@@ -351,7 +456,11 @@ def aggregate_pca_data(animal_id, base_dir, output_dir,
                        landmark_positions, landmark_windows_config,
                        trim_start_cm, trim_end_cm,
                        exclude_first_bins, exclude_last_bins,
-                       smoothing_sigma):
+                       smoothing_sigma,
+                       align_profiles=True,
+                       align_method='template_correlation',
+                       zscore_after_alignment=False,
+                       template_sigma_cm=8.0):
     """
     Main function to aggregate data across sessions for PCA analysis.
     """
@@ -519,7 +628,19 @@ def aggregate_pca_data(animal_id, base_dir, output_dir,
 
     # Z-score normalize profiles
     all_profiles_zscore = zscore_profiles(all_profiles)
-    
+
+    # Landmark-aligned profiles (optional)
+    all_profiles_aligned   = None
+    all_optimal_shifts     = None
+    all_max_correlations   = None
+    if align_profiles:
+        all_profiles_aligned, all_optimal_shifts, all_max_correlations = \
+            align_profiles_template_correlation(
+                all_profiles_zscore, trimmed_bin_centers, landmark_positions,
+                sigma_cm=template_sigma_cm,
+                zscore_after=zscore_after_alignment,
+            )
+
     print(f"\n{'='*60}")
     print("AGGREGATION SUMMARY")
     print(f"{'='*60}")
@@ -595,6 +716,13 @@ def aggregate_pca_data(animal_id, base_dir, output_dir,
         features = f.create_group('features')
         features.create_dataset('spatial_profiles', data=all_profiles)
         features.create_dataset('spatial_profiles_zscore', data=all_profiles_zscore)
+        if all_profiles_aligned is not None:
+            features.create_dataset('spatial_profiles_aligned', data=all_profiles_aligned)
+            align_grp = f.create_group('alignment')
+            align_grp.create_dataset('optimal_shifts', data=all_optimal_shifts)
+            align_grp.create_dataset('max_correlations', data=all_max_correlations)
+            align_grp.attrs['method'] = align_method
+            align_grp.attrs['zscore_after_alignment'] = zscore_after_alignment
         
         # Session info
         sessions_grp = f.create_group('sessions')
@@ -631,5 +759,9 @@ if __name__ == "__main__":
         trim_end_cm=TRIM_END_CM,
         exclude_first_bins=EXCLUDE_FIRST_BINS,
         exclude_last_bins=EXCLUDE_LAST_BINS,
-        smoothing_sigma=SMOOTHING_SIGMA
+        smoothing_sigma=SMOOTHING_SIGMA,
+        align_profiles=ALIGN_PROFILES,
+        align_method=ALIGN_METHOD,
+        zscore_after_alignment=ZSCORE_AFTER_ALIGNMENT,
+        template_sigma_cm=TEMPLATE_SIGMA_CM,
     )

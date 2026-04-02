@@ -39,7 +39,8 @@ from sklearn.cluster import KMeans
 from sklearn.metrics import silhouette_score
 
 from load_tracked import (
-    load_tracking, find_files_from_tracking, find_smi_files, find_preproc_files,
+    load_tracking, filter_to_analysis_days, find_files_from_tracking,
+    find_smi_files, find_preproc_files,
     assign_layers_from_smi, load_preproc_session,
     parse_day_numbers, animal_id_from_path,
     LAYER_ORDER, LAYER_COLORS, report_found_files,
@@ -52,12 +53,14 @@ from load_tracked import (
 
 # Population PCA data file — produced by 4.PCA/PCA_DataAggregation.py
 # The PCA + k-means model is re-derived from this file for consistency.
-PCA_DATA_FILE     = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\PCA\JSY054_pca_data.h5"
+PCA_DATA_FILE     = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\PCA\JSY051_pca_data.h5"
 
 # Tracked ROI file — produced by 6.TrackedROIAnalysis/TrackROIs.ipynb
-ROI_TRACKING_FILE = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\roi_tracking_results.h5"
-ANIMAL_DIR        = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging"
+ROI_TRACKING_FILE = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\TrackedROIs\roi_tracking_results.h5"
+ANIMAL_DIR        = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging"
 REFERENCE_DAY     = "Day2"   # used for layer assignment
+ANALYSIS_DAYS     = ['Day1','Day2','Day3','Day4','Day5']     # e.g. ['Day2','Day3','Day4','Day5','Day6','Day7']
+                             # None = use all tracked sessions
 
 # Profile preprocessing — must match PCA_DataAggregation.py settings
 TRIM_START_CM  = 10.0    # cm — start of analysis window
@@ -71,7 +74,10 @@ N_CLUSTER_PCS    = 5
 K_RANGE          = range(2, 8)
 OVERRIDE_K       = None   # set to int to force a specific k
 
-OUTPUT_DIR = None   # None → same folder as this script
+# check whether the fig_dir exists, if not create it
+OUTPUT_DIR = os.path.join(ANIMAL_DIR, "TrackedROIs")
+if not os.path.exists(OUTPUT_DIR):
+    os.makedirs(OUTPUT_DIR)
 
 # ============================================================
 
@@ -721,6 +727,8 @@ if __name__ == '__main__':
     # ── 2. Load tracking ──────────────────────────────────────
     print("\n=== 2. Loading tracked ROIs ===")
     tracked_matrix, day_labels, session_dirs = load_tracking(ROI_TRACKING_FILE)
+    tracked_matrix, day_labels, session_dirs = filter_to_analysis_days(
+        tracked_matrix, day_labels, session_dirs, ANALYSIS_DAYS)
     session_days = parse_day_numbers(day_labels)
     n_sessions   = len(day_labels)
 

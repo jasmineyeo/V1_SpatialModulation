@@ -43,7 +43,7 @@ PCA_DATA_FILE    = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\P
 N_PCA_COMPONENTS = 10      # total PCs to fit
 N_CLUSTER_PCS    = 5       # top PCs used for k-means
 K_RANGE          = range(2, 8)
-OVERRIDE_K       = None    # set to int to force a specific k
+OVERRIDE_K       = 3    # set to int to force a specific k
 
 OUTPUT_DIR = None          # None → same folder as this script
 
