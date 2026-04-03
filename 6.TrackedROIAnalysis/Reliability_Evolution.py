@@ -42,13 +42,14 @@ from load_tracked import (
 # CONFIGURATION
 # ============================================================
 
-ROI_TRACKING_FILE = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\roi_tracking_JSY054.h5"
-ANIMAL_DIR        = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging"
+ROI_TRACKING_FILE = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\TrackedROIs\roi_tracking_results.h5"
+ANIMAL_DIR        = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging"
 REFERENCE_DAY     = "Day2"
-ANALYSIS_DAYS     = None     # e.g. ['Day2','Day3','Day4','Day5','Day6','Day7']
+ANALYSIS_DAYS     = ['Day1','Day2','Day3', 'Day4','Day5']     # e.g. ['Day2','Day3','Day4','Day5','Day6','Day7']
                              # None = use all tracked sessions
-OUTPUT_DIR        = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\TrackingResults"   # None -> same folder as this script
-
+OUTPUT_DIR = os.path.join(ANIMAL_DIR, "TrackedROIs")
+if not os.path.exists(OUTPUT_DIR):
+    os.makedirs(OUTPUT_DIR)
 # ============================================================
 
 

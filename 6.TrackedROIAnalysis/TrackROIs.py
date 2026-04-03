@@ -15,9 +15,9 @@ from skimage.registration import phase_cross_correlation
 # ============================================================
 # CONFIGURATION
 # ============================================================
-base_dir = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging"
+base_dir = r"D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging"
 reference_day = 'Day2'
-required_days = ['Day1', 'Day2', 'Day3', 'Day4', 'Day5']
+required_days = ['Day1', 'Day2', 'Day3', 'Day4', 'Day5', 'Day6', 'Day7']  # set to None to use all tracked sessions
 
 MICRONS_PER_PIXEL = 0.947408849697405
 

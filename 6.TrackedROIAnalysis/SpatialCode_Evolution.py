@@ -38,12 +38,11 @@ from load_tracked import (
 # ============================================================
 
 
-ROI_TRACKING_FILE = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\roi_tracking_JSY054.h5"
+ROI_TRACKING_FILE = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\TrackedROIs\roi_tracking_results.h5"
 ANIMAL_DIR        = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging"
-REFERENCE_DAY     = "Day1"
-ANALYSIS_DAYS     = None     # e.g. ['Day2','Day3','Day4','Day5','Day6','Day7']
+REFERENCE_DAY     = "Day2"
+ANALYSIS_DAYS     = ['Day2','Day3','Day4','Day5','Day6','Day7']    # e.g. ['Day2','Day3','Day4','Day5','Day6','Day7']
                              # None = use all tracked sessions
-
 
 # Landmark positions in cm (VR corridor) — adjust to match your setup
 LANDMARK_POSITIONS = [25, 55, 85, 115]
@@ -53,13 +52,16 @@ LANDMARK_COLORS    = ['#E41A1C', '#377EB8', '#4DAF4A', '#984EA3']
 LANDMARK_WINDOW_CM = 12.0
 
 # Onset/reward exclusion for landmark preference (bins from each end)
-EXCLUDE_FIRST_BINS = 10
-EXCLUDE_LAST_BINS  = 10
+EXCLUDE_FIRST_BINS = 5
+EXCLUDE_LAST_BINS  = 5
 
 # Gaussian smoothing sigma for field-width estimation (bins)
 SMOOTH_SIGMA = 1.0
 
-OUTPUT_DIR = None   # None -> same folder as this script
+# check whether the fig_dir exists, if not create it
+OUTPUT_DIR = os.path.join(ANIMAL_DIR, "TrackedROIs")
+if not os.path.exists(OUTPUT_DIR):
+    os.makedirs(OUTPUT_DIR)
 
 # ============================================================
 

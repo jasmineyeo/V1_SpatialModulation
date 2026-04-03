@@ -53,13 +53,13 @@ from load_tracked import (
 
 # Population PCA data file — produced by 4.PCA/PCA_DataAggregation.py
 # The PCA + k-means model is re-derived from this file for consistency.
-PCA_DATA_FILE     = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\PCA\JSY051_pca_data.h5"
+PCA_DATA_FILE     = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\PCA\JSY054_pca_data.h5"
 
 # Tracked ROI file — produced by 6.TrackedROIAnalysis/TrackROIs.ipynb
-ROI_TRACKING_FILE = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\TrackedROIs\roi_tracking_results.h5"
-ANIMAL_DIR        = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging"
+ROI_TRACKING_FILE = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\TrackedROIs\roi_tracking_results.h5"
+ANIMAL_DIR        = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging"
 REFERENCE_DAY     = "Day2"   # used for layer assignment
-ANALYSIS_DAYS     = ['Day1','Day2','Day3','Day4','Day5']     # e.g. ['Day2','Day3','Day4','Day5','Day6','Day7']
+ANALYSIS_DAYS     = ['Day2','Day3','Day4','Day5', 'Day6', 'Day7']     # e.g. ['Day2','Day3','Day4','Day5','Day6','Day7']
                              # None = use all tracked sessions
 
 # Profile preprocessing — must match PCA_DataAggregation.py settings
@@ -72,7 +72,7 @@ SMOOTH_SIGMA   = 1.0     # Gaussian smoothing before trimming
 N_PCA_COMPONENTS = 10
 N_CLUSTER_PCS    = 5
 K_RANGE          = range(2, 8)
-OVERRIDE_K       = None   # set to int to force a specific k
+OVERRIDE_K       = 3   # set to int to force a specific k
 
 # check whether the fig_dir exists, if not create it
 OUTPUT_DIR = os.path.join(ANIMAL_DIR, "TrackedROIs")
