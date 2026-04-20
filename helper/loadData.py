@@ -64,6 +64,10 @@ class dataLoader:
         for rep, t in enumerate(abs_time[:-1]):
             twopT[rep] = t0 + datetime.timedelta(seconds=t)
 
+        # Clip timestamps to actual suite2p frame count in case files were lost
+        if numFrames < len(twopT):
+            twopT = twopT[:numFrames]
+
         twopT_float = time2float(twopT)
         twoP_data['AbsoluteT'] = twopT
 
@@ -137,8 +141,24 @@ class dataLoader:
                 dt = dt - datetime.timedelta(hours=12)
             
             VR_absolute_t.append(dt)
+
+        # Fix sessions that cross noon: the per-timestamp AM/PM correction can
+        # flip 12:xx PM entries back to 00:xx AM, breaking monotonicity.
+        # If any step jumps backward by more than 6 hours, add 12 h to that
+        # entry and all subsequent ones.
+        for i in range(1, len(VR_absolute_t)):
+            delta = (VR_absolute_t[i] - VR_absolute_t[i-1]).total_seconds()
+            if delta < -6 * 3600:
+                for j in range(i, len(VR_absolute_t)):
+                    VR_absolute_t[j] = VR_absolute_t[j] + datetime.timedelta(hours=12)
+                break
+            elif delta > 6 * 3600:
+                for j in range(i, len(VR_absolute_t)):
+                    VR_absolute_t[j] = VR_absolute_t[j] - datetime.timedelta(hours=12)
+                break
+
         VR_absolute_t = np.array(VR_absolute_t)
-        
+
         # Calculate relative_t (time elapsed from absolute_t0)
         VR_relative_t = np.array([(t - VR_absolute_t[0]).total_seconds() for t in VR_absolute_t])
 

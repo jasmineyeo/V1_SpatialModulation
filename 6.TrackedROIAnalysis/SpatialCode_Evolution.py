@@ -29,7 +29,8 @@ from scipy.ndimage import gaussian_filter1d
 from load_tracked import (
     load_tracking, filter_to_analysis_days, find_smi_files, find_preproc_files,
     find_files_from_tracking, assign_layers_from_smi, load_smi_session,
-    load_preproc_session, build_matrix, parse_day_numbers, layer_mean_sem,
+    load_preproc_session, build_matrix, build_reliability_mask,
+    parse_day_numbers, layer_mean_sem,
     animal_id_from_path, LAYER_ORDER, LAYER_COLORS, report_found_files,
 )
 
@@ -52,8 +53,8 @@ LANDMARK_COLORS    = ['#E41A1C', '#377EB8', '#4DAF4A', '#984EA3']
 LANDMARK_WINDOW_CM = 12.0
 
 # Onset/reward exclusion for landmark preference (bins from each end)
-EXCLUDE_FIRST_BINS = 5
-EXCLUDE_LAST_BINS  = 5
+EXCLUDE_FIRST_BINS = 10
+EXCLUDE_LAST_BINS  = 10
 
 # Gaussian smoothing sigma for field-width estimation (bins)
 SMOOTH_SIGMA = 1.0
@@ -62,6 +63,16 @@ SMOOTH_SIGMA = 1.0
 OUTPUT_DIR = os.path.join(ANIMAL_DIR, "TrackedROIs")
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
+
+# Cell selection
+# 'reliable_cells'       — basic reliability from preproc
+# 'combined_reliable'    — stricter: CC, Cohen's d, pattern correlation
+# 'reliable_valid_cells' — combined_reliable + valid SMI geometry (needs SMI h5)
+CELL_SELECTION = 'combined_reliable'
+
+# Fixed-pool tracking: if True, reliability is evaluated only on REFERENCE_DAY
+# and that fixed set is followed across all sessions.
+FIXED_POOL = True
 
 # ============================================================
 
@@ -533,10 +544,25 @@ def main():
     for l in LAYER_ORDER:
         print(f"  {l}: {len(cell_layers.get(l, []))} tracked cells")
 
+    # ── Reliability mask ─────────────────────────────────────
+    if CELL_SELECTION is not None:
+        ref_day = REFERENCE_DAY if FIXED_POOL else None
+        rel_mask = build_reliability_mask(tracked_matrix, day_labels, preproc_files,
+                                          cell_selection=CELL_SELECTION,
+                                          smi_files=smi_files,
+                                          reference_day=ref_day)
+        pool_str = f"fixed-pool ({REFERENCE_DAY})" if FIXED_POOL else "per-session"
+        print(f"  Applied {CELL_SELECTION} mask [{pool_str}]")
+    else:
+        rel_mask = None
+
     # ── Analysis 1: Preferred position ──────────────────────
     print("\n[4] Preferred position stability...")
     pref_pos_matrix = build_matrix(tracked_matrix, day_labels, smi_files,
                                     _extract_pref_pos)
+    if rel_mask is not None:
+        pref_pos_matrix[~rel_mask] = np.nan
+
     drift_matrix, _ = compute_position_drift(pref_pos_matrix, cell_layers,
                                               reference_col=0)
     drift_stats = layer_mean_sem(drift_matrix, cell_layers)
@@ -552,6 +578,10 @@ def main():
         tracked_matrix, day_labels, preproc_files,
         LANDMARK_POSITIONS, LANDMARK_WINDOW_CM,
         EXCLUDE_FIRST_BINS, EXCLUDE_LAST_BINS, SMOOTH_SIGMA)
+    if rel_mask is not None:
+        lm_matrix[~rel_mask]  = -1
+        valid_mat[~rel_mask]  = False
+        str_mat[~rel_mask]    = np.nan
 
     plot_landmark_evolution(lm_matrix, valid_mat, cell_layers,
                              session_days, day_labels, animal_id,
@@ -562,6 +592,8 @@ def main():
     print("\n[6] Field width evolution...")
     fw_matrix  = build_field_width_matrix(tracked_matrix, day_labels,
                                            preproc_files, SMOOTH_SIGMA)
+    if rel_mask is not None:
+        fw_matrix[~rel_mask] = np.nan
     fw_stats   = layer_mean_sem(fw_matrix, cell_layers)
     plot_field_width(fw_stats, session_days, day_labels, animal_id,
                      output_path=f"{prefix}_field_width.png")

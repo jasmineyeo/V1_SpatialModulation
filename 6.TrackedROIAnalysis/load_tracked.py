@@ -359,6 +359,99 @@ def parse_day_numbers(day_labels):
 
 
 # ============================================================
+# Reliability mask (shared cell-selection helper)
+# ============================================================
+
+def build_reliability_mask(tracked_matrix, day_labels, preproc_files,
+                            cell_selection='combined_reliable', smi_files=None,
+                            reference_day=None):
+    """
+    Build a (n_tracked, n_sessions) bool mask for cell selection.
+
+    Parameters
+    ----------
+    tracked_matrix : (n_tracked, n_sessions) int — ROI indices (-1 = absent)
+    day_labels     : list of str
+    preproc_files  : dict {day_label: preproc_filepath}
+    cell_selection : str
+        'reliable_cells'      — basic reliability boolean from preproc
+        'combined_reliable'   — stricter: CC, Cohen's d, pattern correlation
+        'reliable_valid_cells'— combined_reliable + valid SMI geometry
+                                (requires smi_files)
+    smi_files : dict {day_label: smi_filepath}, optional
+        Required when cell_selection='reliable_valid_cells'
+    reference_day : str or None
+        If provided, reliability is evaluated ONLY on this day. A cell that
+        passes on the reference day is then included in ALL sessions where it
+        has a valid ROI (roi_idx >= 0), regardless of per-session reliability.
+        This gives a fixed cell pool for tracking experience-dependent change.
+        If None, reliability is evaluated per session (original behaviour).
+
+    Returns
+    -------
+    mask : (n_tracked, n_sessions) bool
+    """
+    n_tracked, n_sessions = tracked_matrix.shape
+    mask = np.zeros((n_tracked, n_sessions), dtype=bool)
+
+    def _load_rel(day, roi_indices):
+        """Load reliability boolean array for one session."""
+        if cell_selection == 'reliable_valid_cells':
+            if smi_files is None or day not in smi_files:
+                return None
+            n_cells = int(np.max(roi_indices)) + 1 if np.any(roi_indices >= 0) else 0
+            rel = np.zeros(n_cells, dtype=bool)
+            with h5py.File(smi_files[day], 'r') as sf:
+                for lk in sf['layer_smi'].keys():
+                    rv = sf['layer_smi'][lk]['reliable_valid_cells'][:].astype(int)
+                    rv = rv[rv < n_cells]
+                    rel[rv] = True
+        else:
+            if day not in preproc_files:
+                return None
+            with h5py.File(preproc_files[day], 'r') as f:
+                if cell_selection == 'reliable_cells':
+                    key = 'reliable_cells'
+                else:
+                    key = 'combined_reliable' if 'combined_reliable' in f else 'reliable_cells'
+                rel = f[key][:].astype(bool)
+        return rel
+
+    if reference_day is not None:
+        # Fixed pool: evaluate reliability once on the reference day, then
+        # include those cells in all sessions where they have a valid ROI.
+        ref_col = day_labels.index(reference_day) if reference_day in day_labels else None
+        if ref_col is None:
+            print(f"  [WARNING] reference_day '{reference_day}' not found in day_labels")
+        else:
+            ref_roi = tracked_matrix[:, ref_col]
+            rel = _load_rel(reference_day, ref_roi)
+            if rel is not None:
+                # Determine which tracked rows pass reliability on the reference day
+                reliable_rows = np.array([
+                    (ref_roi[r] >= 0 and ref_roi[r] < len(rel) and rel[ref_roi[r]])
+                    for r in range(n_tracked)
+                ])
+                # Include those cells in every session where they have a valid ROI
+                for col in range(n_sessions):
+                    for row in np.where(reliable_rows)[0]:
+                        if tracked_matrix[row, col] >= 0:
+                            mask[row, col] = True
+    else:
+        # Per-session reliability (original behaviour)
+        for col, day in enumerate(day_labels):
+            roi_indices = tracked_matrix[:, col]
+            rel = _load_rel(day, roi_indices)
+            if rel is None:
+                continue
+            for row, roi in enumerate(roi_indices):
+                if roi >= 0 and roi < len(rel) and rel[roi]:
+                    mask[row, col] = True
+
+    return mask
+
+
+# ============================================================
 # Shared plot helpers
 # ============================================================
 

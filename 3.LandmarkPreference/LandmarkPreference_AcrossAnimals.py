@@ -44,7 +44,7 @@ N_LM = len(LANDMARK_POSITIONS)
 
 ANIMAL_DIRS = {
     'JSY040': r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging',
-    'JSY041': r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging',
+    # 'JSY041': r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging',
     # 'JSY044': r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging',
     'JSY051': r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging',
     'JSY052': r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging',
@@ -52,7 +52,7 @@ ANIMAL_DIRS = {
     'JSY055': r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging',
 }
 
-OUTPUT_DIR = r'D:\V1_SpatialModulation\2p\V1_prism\landmark_analysis_WtO44'
+OUTPUT_DIR = r'D:\V1_SpatialModulation\2p\V1_prism\landmark_analysis_WtO4144'
 
 
 # ─────────────────────────── helpers ─────────────────────────────────────────
@@ -241,7 +241,7 @@ def _layer_entropy_by_day(all_data, layer):
 
 # ─────────────────────────── heatmap panel helper ────────────────────────────
 
-def _draw_proportion_heatmap(ax, agg, title, cmap, vmin=0, vmax=1):
+def _draw_proportion_heatmap(ax, agg, title, cmap, vmin=0, vmax=0.8):
     """
     Draw a single layers × landmarks heatmap panel from aggregated data.
     Each cell shows: mean ± SEM on top, (n=cells) below.
@@ -270,22 +270,22 @@ def _draw_proportion_heatmap(ax, agg, title, cmap, vmin=0, vmax=1):
             s = mat_sem[ri, ci]
             n = mat_n[ri, ci]
             if np.isnan(m):
-                ax.text(ci, ri, 'N/A', ha='center', va='center', fontsize=7, color='gray')
+                ax.text(ci, ri, 'N/A', ha='center', va='center', fontsize=23, color='gray')
                 continue
             text_color = 'white' if m > 0.55 else 'black'
             label = f'{m:.2f}\n±{s:.2f}\n(n={n})'
             ax.text(ci, ri, label, ha='center', va='center',
-                    fontsize=6.5, color=text_color, linespacing=1.3)
+                    fontsize=23, color=text_color, linespacing=1.5)
 
     ax.set_xticks(range(N_LM))
-    ax.set_xticklabels([f'L{i+1}\n({LANDMARK_POSITIONS[i]}cm)' for i in range(N_LM)], fontsize=7)
+    ax.set_xticklabels([f'LD{i+1}\n({LANDMARK_POSITIONS[i]}cm)' for i in range(N_LM)], fontsize=23)
     ax.set_yticks(range(n_layers))
-    ax.set_yticklabels(layers, fontsize=8)
+    ax.set_yticklabels(layers, fontsize=23)
     for i, layer in enumerate(layers):
         ax.get_yticklabels()[i].set_color(LAYER_COLORS.get(layer, 'k'))
-    ax.set_xlabel('Landmark', fontsize=7)
-    ax.set_ylabel('Layer', fontsize=7)
-    ax.set_title(title, fontsize=8, fontweight='bold')
+    # ax.set_xlabel('Landmark', fontsize=23)
+    # ax.set_ylabel('Layer', fontsize=23)
+    ax.set_title(title, fontsize=25, fontweight='bold')
 
     return im
 
@@ -298,7 +298,7 @@ def plot_population_trajectory(all_data, save_path):
     layers  = LAYER_ORDER
     n_layers = len(layers)
 
-    fig, axes = plt.subplots(1, n_layers, figsize=(4 * n_layers, 4.5), sharey=True)
+    fig, axes = plt.subplots(1, n_layers, figsize=(5.5 * n_layers, 6), sharey=True)
     if n_layers == 1:
         axes = [axes]
 
@@ -316,16 +316,17 @@ def plot_population_trajectory(all_data, save_path):
                 ax.errorbar(xs, means, yerr=sems,
                             color=LANDMARK_COLORS[lm_i], marker='o',
                             linewidth=2, capsize=3,
-                            label=f'L{lm_i+1} ({LANDMARK_POSITIONS[lm_i]}cm)')
+                            label=f'LD{lm_i+1} ({LANDMARK_POSITIONS[lm_i]}cm)')
         ax.axhline(1 / N_LM, color='gray', linestyle='--', linewidth=0.8, alpha=0.6)
-        ax.set_title(layer, color=LAYER_COLORS.get(layer, 'k'), fontsize=11, fontweight='bold')
-        ax.set_xlabel('Day', fontsize=9)
+        ax.set_title(layer, color=LAYER_COLORS.get(layer, 'k'), fontsize=16, fontweight='bold')
+        ax.set_xlabel('Day', fontsize=14)
         ax.set_ylim(0, 1)
         ax.set_xticks(days)
+        ax.tick_params(labelsize=13)
 
-    axes[0].set_ylabel('Mean proportion of cells (± SEM)', fontsize=10)
-    axes[-1].legend(fontsize=8, loc='upper right')
-    fig.suptitle('Population landmark preference trajectory', fontsize=12)
+    axes[0].set_ylabel('Mean proportion of cells (± SEM)', fontsize=14)
+    axes[-1].legend(fontsize=13, loc='upper right')
+    fig.suptitle('Population landmark preference trajectory', fontsize=18)
     fig.tight_layout()
     fig.savefig(os.path.join(save_path, 'A_population_trajectory.png'), dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -347,10 +348,10 @@ def plot_proportion_heatmap_grid(all_data, save_path):
 
     cmap = plt.cm.YlOrRd
 
-    fig = plt.figure(figsize=(7 * n_cols, 5.5 * n_rows))
+    fig = plt.figure(figsize=(16 * n_cols, 13 * n_rows))
     gs  = gridspec.GridSpec(n_rows, n_cols + 1,
-                             width_ratios=[1] * n_cols + [0.06],
-                             hspace=0.45, wspace=0.35)
+                             width_ratios=[1] * n_cols + [0.04],
+                             hspace=0.25, wspace=0.15)
 
     # --- Grand Average ---
     agg_all = _aggregate_for_days(all_data, target_days=None)
@@ -379,13 +380,14 @@ def plot_proportion_heatmap_grid(all_data, save_path):
 
     # Shared colorbar
     cbar_ax = fig.add_subplot(gs[:, -1])
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=1))
+    sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=0, vmax=0.8))
     sm.set_array([])
     cbar = fig.colorbar(sm, cax=cbar_ax)
-    cbar.set_label('Proportion of Cells', fontsize=10)
+    cbar.set_label('Proportion of Cells', fontsize=14)
+    cbar.ax.tick_params(labelsize=12)
 
     fig.suptitle(f'Landmark Preference — Proportion of Cells per Layer  (n={n_animals_total} animals, {n_sessions_total} sessions)',
-                 fontsize=13, fontweight='bold', y=1.01)
+                 fontsize=18, fontweight='bold', y=1.01)
     fig.savefig(os.path.join(save_path, 'B_proportion_heatmap_grid.png'),
                 dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -402,7 +404,7 @@ def plot_day1_distribution(all_data, save_path):
         return
     d1 = day1_options[0]
 
-    fig, axes = plt.subplots(1, len(LAYER_ORDER), figsize=(3.5 * len(LAYER_ORDER), 4.5), sharey=True)
+    fig, axes = plt.subplots(1, len(LAYER_ORDER), figsize=(5.5 * len(LAYER_ORDER), 6), sharey=True)
 
     for ax, layer in zip(axes, LAYER_ORDER):
         props_by_animal = []
@@ -427,13 +429,14 @@ def plot_day1_distribution(all_data, save_path):
                     mat[ai], 'k.', markersize=5, alpha=0.5)
         ax.axhline(1 / N_LM, color='gray', linestyle='--', linewidth=0.8)
         ax.set_xticks(x)
-        ax.set_xticklabels([f'L{i+1}\n({LANDMARK_POSITIONS[i]}cm)' for i in range(N_LM)], fontsize=8)
+        ax.set_xticklabels([f'LD{i+1}\n({LANDMARK_POSITIONS[i]}cm)' for i in range(N_LM)], fontsize=14)
         ax.set_ylim(0, 1)
-        ax.set_title(layer, color=LAYER_COLORS.get(layer, 'k'), fontsize=11, fontweight='bold')
-        ax.set_xlabel('Landmark', fontsize=9)
+        ax.set_title(layer, color=LAYER_COLORS.get(layer, 'k'), fontsize=16, fontweight='bold')
+        ax.set_xlabel('Landmark', fontsize=14)
+        ax.tick_params(labelsize=13)
 
-    axes[0].set_ylabel('Proportion of cells', fontsize=10)
-    fig.suptitle(f'Day {d1} landmark distribution (mean ± SEM, dots = individual animals)', fontsize=12)
+    axes[0].set_ylabel('Proportion of cells', fontsize=14)
+    fig.suptitle(f'Day {d1} landmark distribution (mean ± SEM, dots = individual animals)', fontsize=18)
     fig.tight_layout()
     fig.savefig(os.path.join(save_path, 'C_day1_distribution.png'), dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -459,7 +462,7 @@ def plot_early_vs_late_proportion(all_data, save_path):
     agg_late  = _aggregate_for_days(all_data, target_days=late_days)
 
     fig, axes = plt.subplots(1, len(LAYER_ORDER),
-                              figsize=(4 * len(LAYER_ORDER), 4.5), sharey=True)
+                              figsize=(5.5 * len(LAYER_ORDER), 6), sharey=True)
     x     = np.arange(N_LM)
     width = 0.35
 
@@ -477,14 +480,14 @@ def plot_early_vs_late_proportion(all_data, save_path):
             late_means.append(ml)
             late_sems.append(sl)
 
-            if len(e_vals) >= 3 and len(l_vals) >= 3:
-                try:
-                    _, p = mannwhitneyu(e_vals, l_vals, alternative='two-sided')
-                except Exception:
-                    p = np.nan
-            else:
-                p = np.nan
-            pvals.append(p)
+            # if len(e_vals) >= 3 and len(l_vals) >= 3:
+            #     try:
+            #         _, p = mannwhitneyu(e_vals, l_vals, alternative='two-sided')
+            #     except Exception:
+            #         p = np.nan
+            # else:
+            #     p = np.nan
+            # pvals.append(p)
 
         ax.bar(x - width / 2, early_means, width, yerr=early_sems,
                color=LANDMARK_COLORS, alpha=0.45, capsize=4,
@@ -498,18 +501,19 @@ def plot_early_vs_late_proportion(all_data, save_path):
                     default=0) + 0.05
         for xi, p in enumerate(pvals):
             if not np.isnan(p):
-                ax.text(xi, y_top, _stars(p), ha='center', fontsize=10)
+                ax.text(xi, y_top, _stars(p), ha='center', fontsize=14)
 
         ax.set_xticks(x)
-        ax.set_xticklabels([f'L{i+1}\n({LANDMARK_POSITIONS[i]}cm)' for i in range(N_LM)], fontsize=7)
+        ax.set_xticklabels([f'LD{i+1}\n({LANDMARK_POSITIONS[i]}cm)' for i in range(N_LM)], fontsize=14)
         ax.set_ylim(0, min(1.05, y_top + 0.1))
         ax.axhline(1 / N_LM, color='gray', linestyle='--', linewidth=0.8)
-        ax.set_title(layer, color=LAYER_COLORS.get(layer, 'k'), fontsize=11, fontweight='bold')
-        ax.set_xlabel('Landmark', fontsize=9)
+        ax.set_title(layer, color=LAYER_COLORS.get(layer, 'k'), fontsize=16, fontweight='bold')
+        ax.set_xlabel('Landmark', fontsize=14)
+        ax.tick_params(labelsize=13)
 
-    axes[0].set_ylabel('Proportion of cells (± SEM)', fontsize=10)
-    axes[-1].legend(fontsize=8, loc='upper right')
-    fig.suptitle('Early vs Late landmark preference — proportion of cells (Mann-Whitney)', fontsize=12)
+    axes[0].set_ylabel('Proportion of cells (± SEM)', fontsize=14)
+    axes[-1].legend(fontsize=13, loc='upper right')
+    fig.suptitle('Early vs Late landmark preference — proportion of cells', fontsize=18)
     fig.tight_layout()
     fig.savefig(os.path.join(save_path, 'D_early_vs_late_proportion.png'), dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -530,7 +534,7 @@ def plot_layer_comparison(all_data, save_path):
     agg_d1    = _aggregate_for_days(all_data, target_days=[d1])
     agg_dlast = _aggregate_for_days(all_data, target_days=[d_last])
 
-    fig, axes = plt.subplots(1, N_LM, figsize=(4 * N_LM, 4.5), sharey=True)
+    fig, axes = plt.subplots(1, N_LM, figsize=(5.5 * N_LM, 6), sharey=True)
     x     = np.arange(len(LAYER_ORDER))
     width = 0.35
 
@@ -553,16 +557,17 @@ def plot_layer_comparison(all_data, save_path):
                color=layer_colors, alpha=1.0, capsize=4, label=f'Day {d_last}')
 
         ax.set_xticks(x)
-        ax.set_xticklabels(LAYER_ORDER, fontsize=9)
+        ax.set_xticklabels(LAYER_ORDER, fontsize=14)
         ax.set_ylim(0, 1)
         ax.axhline(1 / N_LM, color='gray', linestyle='--', linewidth=0.8)
-        ax.set_title(f'L{lm_i+1} ({LANDMARK_POSITIONS[lm_i]} cm)',
-                     color=LANDMARK_COLORS[lm_i], fontsize=11, fontweight='bold')
-        ax.set_xlabel('Layer', fontsize=9)
+        ax.set_title(f'LD{lm_i+1} ({LANDMARK_POSITIONS[lm_i]} cm)',
+                     color=LANDMARK_COLORS[lm_i], fontsize=16, fontweight='bold')
+        ax.set_xlabel('Layer', fontsize=14)
+        ax.tick_params(labelsize=13)
 
-    axes[0].set_ylabel('Proportion of cells (± SEM)', fontsize=10)
-    axes[-1].legend(fontsize=9)
-    fig.suptitle(f'Layer comparison: proportion per landmark — Day {d1} vs Day {d_last}', fontsize=12)
+    axes[0].set_ylabel('Proportion of cells (± SEM)', fontsize=14)
+    axes[-1].legend(fontsize=13)
+    fig.suptitle(f'Layer comparison: proportion per landmark — Day {d1} vs Day {d_last}', fontsize=18)
     fig.tight_layout()
     fig.savefig(os.path.join(save_path, 'E_layer_comparison.png'), dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -579,7 +584,7 @@ def plot_per_animal_proportion(all_data, save_path):
     days  = _all_days(all_data)
     layer = 'L2/3'
 
-    fig, axes = plt.subplots(1, N_LM, figsize=(4 * N_LM, 4.5), sharey=True)
+    fig, axes = plt.subplots(1, N_LM, figsize=(5.5 * N_LM, 6), sharey=True)
 
     for lm_i, ax in enumerate(axes):
         # Individual animal traces
@@ -610,15 +615,16 @@ def plot_per_animal_proportion(all_data, save_path):
                         label=f'Mean (n={len(all_data)} animals)', zorder=10)
 
         ax.axhline(1 / N_LM, color='gray', linestyle='--', linewidth=0.8)
-        ax.set_title(f'L{lm_i+1} ({LANDMARK_POSITIONS[lm_i]} cm)',
-                     color=LANDMARK_COLORS[lm_i], fontsize=11, fontweight='bold')
-        ax.set_xlabel('Day', fontsize=9)
+        ax.set_title(f'LD{lm_i+1} ({LANDMARK_POSITIONS[lm_i]} cm)',
+                     color=LANDMARK_COLORS[lm_i], fontsize=16, fontweight='bold')
+        ax.set_xlabel('Day', fontsize=14)
         ax.set_ylim(0, 1)
         ax.set_xticks(days)
+        ax.tick_params(labelsize=13)
 
-    axes[0].set_ylabel('Proportion of cells (L2/3)', fontsize=10)
-    axes[-1].legend(fontsize=8)
-    fig.suptitle('L2/3 — individual animal proportion per landmark (thin) + mean±SEM (bold)', fontsize=12)
+    axes[0].set_ylabel('Proportion of cells (L2/3)', fontsize=14)
+    axes[-1].legend(fontsize=13)
+    fig.suptitle('L2/3 — individual animal proportion per landmark (thin) + mean±SEM (bold)', fontsize=18)
     fig.tight_layout()
     fig.savefig(os.path.join(save_path, 'F_per_animal_proportion.png'), dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -638,7 +644,7 @@ def plot_sup_vs_deep_proportion(all_data, save_path):
         'Deep\n(L5+L6)':          (['L5', 'L6'],   '#E53935'),
     }
 
-    fig, axes = plt.subplots(1, N_LM, figsize=(4 * N_LM, 4.5), sharey=True)
+    fig, axes = plt.subplots(1, N_LM, figsize=(5.5 * N_LM, 6), sharey=True)
 
     for lm_i, ax in enumerate(axes):
         for gname, (glayers, gcol) in groups.items():
@@ -661,15 +667,16 @@ def plot_sup_vs_deep_proportion(all_data, save_path):
                             capsize=4, label=gname)
 
         ax.axhline(1 / N_LM, color='gray', linestyle='--', linewidth=0.8)
-        ax.set_title(f'L{lm_i+1} ({LANDMARK_POSITIONS[lm_i]} cm)',
-                     color=LANDMARK_COLORS[lm_i], fontsize=11, fontweight='bold')
-        ax.set_xlabel('Day', fontsize=9)
+        ax.set_title(f'LD{lm_i+1} ({LANDMARK_POSITIONS[lm_i]} cm)',
+                     color=LANDMARK_COLORS[lm_i], fontsize=16, fontweight='bold')
+        ax.set_xlabel('Day', fontsize=14)
         ax.set_ylim(0, 1)
         ax.set_xticks(days)
+        ax.tick_params(labelsize=13)
 
-    axes[0].set_ylabel('Proportion of cells (± SEM)', fontsize=10)
-    axes[-1].legend(fontsize=9, loc='upper right')
-    fig.suptitle('Superficial vs Deep — proportion preferring each landmark', fontsize=12)
+    axes[0].set_ylabel('Proportion of cells (± SEM)', fontsize=14)
+    axes[-1].legend(fontsize=13, loc='upper right')
+    fig.suptitle('Superficial vs Deep — proportion preferring each landmark', fontsize=18)
     fig.tight_layout()
     fig.savefig(os.path.join(save_path, 'G_sup_vs_deep_proportion.png'), dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -721,7 +728,7 @@ def plot_stats_table(all_data, save_path):
 
             rows.append({
                 'Layer':              layer,
-                'Landmark':           f'L{lm_i+1} ({LANDMARK_POSITIONS[lm_i]}cm)',
+                'Landmark':           f'LD{lm_i+1} ({LANDMARK_POSITIONS[lm_i]}cm)',
                 'D1 mean±SEM':        f'{m1:.2f}±{s1:.2f}' if not np.isnan(m1) else 'n/a',
                 f'D{d_last} mean±SEM': f'{ml:.2f}±{sl:.2f}' if not np.isnan(ml) else 'n/a',
                 'KW p':               f'{kw_p:.4f}' if not np.isnan(kw_p) else 'n/a',
@@ -736,19 +743,19 @@ def plot_stats_table(all_data, save_path):
     print('  Saved: H_stats_table.csv')
 
     n_rows = len(df)
-    fig, ax = plt.subplots(figsize=(16, 2.2 + 0.38 * n_rows))
+    fig, ax = plt.subplots(figsize=(20, 2.8 + 0.5 * n_rows))
     ax.axis('off')
     col_labels = list(df.columns)
     table = ax.table(cellText=df.values, colLabels=col_labels,
                      cellLoc='center', loc='center')
     table.auto_set_font_size(False)
-    table.set_fontsize(7.5)
-    table.scale(1, 1.5)
+    table.set_fontsize(12)
+    table.scale(1, 2.0)
     for j in range(len(col_labels)):
         table[(0, j)].set_facecolor('#2c3e50')
         table[(0, j)].set_text_props(color='white', fontweight='bold')
     ax.set_title(f'Proportion statistics: D{d1} vs D{d_last} (per layer × landmark)',
-                 fontsize=10, pad=10)
+                 fontsize=16, pad=10)
     fig.tight_layout()
     fig.savefig(os.path.join(save_path, 'H_stats_table.png'), dpi=150, bbox_inches='tight')
     plt.close(fig)
@@ -764,7 +771,7 @@ def plot_summary(all_data, save_path):
     days   = _all_days(all_data)
     layers = LAYER_ORDER
 
-    fig = plt.figure(figsize=(max(10, 1.8 * len(days)), 12))
+    fig = plt.figure(figsize=(max(12, 2.4 * len(days)), 16))
     gs  = gridspec.GridSpec(3, 1, hspace=0.50)
 
     # --- Top: proportion trajectory for all landmarks, L2/3 ---
@@ -781,13 +788,14 @@ def plot_summary(all_data, save_path):
         if xs:
             ax_prop.errorbar(xs, means, yerr=sems,
                              color=LANDMARK_COLORS[lm_i], marker='o', linewidth=2,
-                             capsize=3, label=f'L{lm_i+1} ({LANDMARK_POSITIONS[lm_i]}cm)')
+                             capsize=3, label=f'LD{lm_i+1} ({LANDMARK_POSITIONS[lm_i]}cm)')
     ax_prop.axhline(1 / N_LM, color='gray', linestyle='--', linewidth=0.8)
-    ax_prop.set_ylabel('Proportion of cells (± SEM)', fontsize=10)
+    ax_prop.set_ylabel('Proportion of cells (± SEM)', fontsize=14)
     ax_prop.set_ylim(0, 1)
     ax_prop.set_xticks(days)
-    ax_prop.legend(fontsize=8, title='Landmark')
-    ax_prop.set_title('L2/3 — Proportion per landmark across days', fontsize=11)
+    ax_prop.tick_params(labelsize=13)
+    ax_prop.legend(fontsize=13, title='Landmark')
+    ax_prop.set_title('L2/3 — Proportion per landmark across days', fontsize=16)
 
     # --- Mid: bias index per layer ---
     ax_bias = fig.add_subplot(gs[1])
@@ -805,11 +813,12 @@ def plot_summary(all_data, save_path):
                              color=LAYER_COLORS.get(layer, 'k'), marker='o',
                              linewidth=2, capsize=3, label=layer)
     ax_bias.axhline(0, color='gray', linestyle='--', linewidth=0.8)
-    ax_bias.set_ylabel('Bias Index (± SEM)', fontsize=10)
+    ax_bias.set_ylabel('Bias Index (± SEM)', fontsize=14)
     ax_bias.set_ylim(-0.05, 0.75)
     ax_bias.set_xticks(days)
-    ax_bias.legend(fontsize=8)
-    ax_bias.set_title('Landmark Bias Index per layer', fontsize=11)
+    ax_bias.tick_params(labelsize=13)
+    ax_bias.legend(fontsize=13)
+    ax_bias.set_title('Landmark Bias Index per layer', fontsize=16)
 
     # --- Bottom: entropy per layer ---
     ax_ent = fig.add_subplot(gs[2])
@@ -827,16 +836,17 @@ def plot_summary(all_data, save_path):
                             color=LAYER_COLORS.get(layer, 'k'), marker='o',
                             linewidth=2, capsize=3, label=layer)
     ax_ent.axhline(1.0, color='gray', linestyle='--', linewidth=0.8, label='Uniform')
-    ax_ent.set_ylabel('Norm. Entropy (± SEM)', fontsize=10)
+    ax_ent.set_ylabel('Norm. Entropy (± SEM)', fontsize=14)
     ax_ent.set_ylim(0, 1.15)
-    ax_ent.set_xlabel('Day', fontsize=10)
+    ax_ent.set_xlabel('Day', fontsize=14)
     ax_ent.set_xticks(days)
-    ax_ent.legend(fontsize=8)
-    ax_ent.set_title('Normalized Shannon Entropy per layer', fontsize=11)
+    ax_ent.tick_params(labelsize=13)
+    ax_ent.legend(fontsize=13)
+    ax_ent.set_title('Normalized Shannon Entropy per layer', fontsize=16)
 
     n_animals = len(all_data)
     fig.suptitle(f'Landmark Preference — Population Summary (n={n_animals} animals)',
-                 fontsize=13, fontweight='bold')
+                 fontsize=18, fontweight='bold')
     fig.savefig(os.path.join(save_path, 'I_summary.png'), dpi=150, bbox_inches='tight')
     plt.close(fig)
     print('  Saved: I_summary')

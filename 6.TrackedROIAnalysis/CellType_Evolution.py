@@ -42,6 +42,7 @@ from load_tracked import (
     load_tracking, filter_to_analysis_days, find_files_from_tracking,
     find_smi_files, find_preproc_files,
     assign_layers_from_smi, load_preproc_session,
+    build_reliability_mask,
     parse_day_numbers, animal_id_from_path,
     LAYER_ORDER, LAYER_COLORS, report_found_files,
 )
@@ -64,7 +65,7 @@ ANALYSIS_DAYS     = ['Day2','Day3','Day4','Day5', 'Day6', 'Day7']     # e.g. ['D
 
 # Profile preprocessing — must match PCA_DataAggregation.py settings
 TRIM_START_CM  = 10.0    # cm — start of analysis window
-TRIM_END_CM    = 125.0   # cm — end of analysis window
+TRIM_END_CM    = 120.0   # cm — end of analysis window
 TARGET_N_BINS  = 115     # bins after interpolation
 SMOOTH_SIGMA   = 1.0     # Gaussian smoothing before trimming
 
@@ -74,8 +75,18 @@ N_CLUSTER_PCS    = 5
 K_RANGE          = range(2, 8)
 OVERRIDE_K       = 3   # set to int to force a specific k
 
+# Cell selection
+# 'reliable_cells'       — basic reliability from preproc
+# 'combined_reliable'    — stricter: CC, Cohen's d, pattern correlation
+# 'reliable_valid_cells' — combined_reliable + valid SMI geometry (needs SMI h5)
+CELL_SELECTION = 'combined_reliable'
+
+# Fixed-pool tracking: if True, reliability is evaluated only on REFERENCE_DAY
+# and that fixed set is followed across all sessions.
+FIXED_POOL = True
+
 # check whether the fig_dir exists, if not create it
-OUTPUT_DIR = os.path.join(ANIMAL_DIR, "TrackedROIs")
+OUTPUT_DIR = os.path.join(ANIMAL_DIR, "TrackedROIs","CellTypeEvolution")
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
 
@@ -249,17 +260,43 @@ def assign_semantic_labels(raw_labels, profiles_pop, n_types,
     return names, colors, mean_profiles
 
 
+def plot_mean_profiles(mean_profiles, bin_centers, landmark_positions,
+                        type_names, type_colors, animal_id, output_path=None):
+    """Mean spatial profile per cluster (from population PCA model)."""
+    n_types = len(type_names)
+    fig, axes = plt.subplots(1, n_types, figsize=(4 * n_types, 3.5), sharey=True)
+    fig.suptitle(f'{animal_id} — Population cluster mean profiles', fontweight='bold')
+    if n_types == 1:
+        axes = [axes]
+    for t, ax in enumerate(axes):
+        ax.plot(bin_centers, mean_profiles[t], color=type_colors[t], linewidth=2)
+        for lp in landmark_positions:
+            ax.axvline(lp, color='gray', linestyle='--', alpha=0.5, linewidth=0.8)
+        ax.set_title(type_names[t], color=type_colors[t], fontweight='bold', fontsize=9)
+        ax.set_xlabel('Position (cm)')
+        ax.set_ylabel('Z-scored activity' if t == 0 else '')
+        ax.grid(True, alpha=0.2, axis='y')
+    plt.tight_layout()
+    if output_path:
+        fig.savefig(output_path, dpi=150, bbox_inches='tight')
+    return fig
+
+
 # ── Tracked-cell feature extraction ──────────────────────────
 
 def build_label_tensor(tracked_matrix, day_labels, preproc_files,
                         pca, kmeans, n_types,
-                        trim_start, trim_end, target_n_bins, smooth_sigma):
+                        trim_start, trim_end, target_n_bins, smooth_sigma,
+                        rel_mask=None):
     """
     For each tracked cell × session:
       1. Extract mean spatial profile from preproc HDF5
       2. Apply same preprocessing as population PCA
       3. Project through PCA.transform(), assign cluster via KMeans.predict()
       4. Store in label_tensor[row, col]
+
+    rel_mask : (n_tracked, n_sessions) bool or None
+        If provided, only cells where rel_mask[row, col] is True are labelled.
 
     Returns
     -------
@@ -274,17 +311,22 @@ def build_label_tensor(tracked_matrix, day_labels, preproc_files,
             continue
 
         print(f"  {day}...", end=' ', flush=True)
-        _, nsa, bc, rel, _, _, _ = load_preproc_session(preproc_files[day])
+        _, nsa, bc, _, _, _, _ = load_preproc_session(preproc_files[day])
 
-        # Preprocess all cells in this session to PCA feature space
+        # Preprocess all cells (pass all-True rel so no cells are dropped here;
+        # reliability is handled by rel_mask at the tracked-cell level below)
         profiles_sess, _ = preprocess_profiles(
-            nsa, bc, rel, trim_start, trim_end, target_n_bins, smooth_sigma
+            nsa, bc, np.ones(nsa.shape[0], dtype=bool),
+            trim_start, trim_end, target_n_bins, smooth_sigma
         )
         # profiles_sess : (n_cells_session, TARGET_N_BINS) — NaN for bad cells
 
-        # Find which tracked cells are present in this session
+        # Find which tracked cells are present and pass reliability in this session
         roi_indices = tracked_matrix[:, col]
-        valid_rows  = np.where(roi_indices >= 0)[0]
+        if rel_mask is not None:
+            valid_rows = np.where((roi_indices >= 0) & rel_mask[:, col])[0]
+        else:
+            valid_rows = np.where(roi_indices >= 0)[0]
 
         if len(valid_rows) == 0:
             print("0 valid")
@@ -724,6 +766,10 @@ if __name__ == '__main__':
 
     animal_id = animal_id_from_path(ROI_TRACKING_FILE)
 
+    plot_mean_profiles(mean_profiles, bin_centers, landmark_positions,
+                       type_names, type_colors, animal_id,
+                       output_path=os.path.join(out_dir, f'{animal_id}_cluster_mean_profiles.png'))
+
     # ── 2. Load tracking ──────────────────────────────────────
     print("\n=== 2. Loading tracked ROIs ===")
     tracked_matrix, day_labels, session_dirs = load_tracking(ROI_TRACKING_FILE)
@@ -751,12 +797,25 @@ if __name__ == '__main__':
     for layer in layer_list:
         print(f"  {layer}: {len(cell_layers[layer])} tracked cells")
 
-    # ── 3. Build label tensor ─────────────────────────────────
+    # ── 3. Build reliability mask ─────────────────────────────
+    if CELL_SELECTION is not None:
+        ref_day = REFERENCE_DAY if FIXED_POOL else None
+        rel_mask = build_reliability_mask(tracked_matrix, day_labels, preproc_files,
+                                          cell_selection=CELL_SELECTION,
+                                          smi_files=smi_files,
+                                          reference_day=ref_day)
+        pool_str = f"fixed-pool ({REFERENCE_DAY})" if FIXED_POOL else "per-session"
+        print(f"  Cell selection: {CELL_SELECTION} [{pool_str}]")
+    else:
+        rel_mask = None
+
+    # ── 4. Build label tensor ─────────────────────────────────
     print("\n=== 3. Labelling tracked cells per session ===")
     label_tensor = build_label_tensor(
         tracked_matrix, day_labels, preproc_files,
         pca, kmeans, n_types,
-        TRIM_START_CM, TRIM_END_CM, TARGET_N_BINS, SMOOTH_SIGMA
+        TRIM_START_CM, TRIM_END_CM, TARGET_N_BINS, SMOOTH_SIGMA,
+        rel_mask=rel_mask,
     )
 
     total_labelled = int(np.sum(label_tensor >= 0))
@@ -770,7 +829,6 @@ if __name__ == '__main__':
         type_names, type_colors, animal_id,
         output_path=os.path.join(out_dir, f'{animal_id}_tracked_label_heatmap.png')
     )
-    plt.show()
 
     # ── 5. Proportion matrix + plots ─────────────────────────
     print("\n=== 5. Layer proportion analysis ===")
@@ -783,7 +841,6 @@ if __name__ == '__main__':
         type_names, type_colors, animal_id,
         output_path=os.path.join(out_dir, f'{animal_id}_tracked_stacked_bars.png')
     )
-    plt.show()
 
     run_chi_square_tests(
         label_tensor, cell_layers, layer_list, day_labels, n_types
@@ -796,14 +853,12 @@ if __name__ == '__main__':
         type_names, type_colors, animal_id,
         output_path=os.path.join(out_dir, f'{animal_id}_tracked_trajectories_by_layer.png')
     )
-    plt.show()
 
     plot_trajectories_by_type(
         prop, layer_list, session_days, day_labels,
         type_names, type_colors, animal_id,
         output_path=os.path.join(out_dir, f'{animal_id}_tracked_trajectories_by_type.png')
     )
-    plt.show()
 
     # ── 7. Per-cell statistics ────────────────────────────────
     print("\n=== 7. Statistical tests ===")
@@ -820,6 +875,6 @@ if __name__ == '__main__':
         all_slopes, layer_list, type_names, type_colors, animal_id,
         output_path=os.path.join(out_dir, f'{animal_id}_tracked_slope_violins.png')
     )
-    plt.show()
 
     print(f"\n=== Done — figures saved to: {out_dir} ===")
+    plt.show()

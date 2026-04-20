@@ -22,9 +22,9 @@ import numpy as np
 import matplotlib.pyplot as plt
 import scipy.stats as stats
 from load_tracked import (
-    load_tracking, filter_to_analysis_days, find_smi_files, find_files_from_tracking,
-    assign_layers_from_smi, load_smi_session, build_matrix,
-    parse_day_numbers, layer_mean_sem, animal_id_from_path,
+    load_tracking, filter_to_analysis_days, find_smi_files, find_preproc_files,
+    find_files_from_tracking, assign_layers_from_smi, load_smi_session, build_matrix,
+    build_reliability_mask, parse_day_numbers, layer_mean_sem, animal_id_from_path,
     LAYER_ORDER, LAYER_COLORS, report_found_files,
 )
 
@@ -32,13 +32,23 @@ from load_tracked import (
 # CONFIGURATION
 # ============================================================
 
-ROI_TRACKING_FILE = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\TrackedROIs\roi_tracking_results.h5"
-ANIMAL_DIR        = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging"
+ROI_TRACKING_FILE = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\TrackedROIs\roi_tracking_results.h5"
+ANIMAL_DIR        = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging"
 REFERENCE_DAY     = "Day2"
-ANALYSIS_DAYS     = ['Day1','Day2','Day3', 'Day4','Day5']     # e.g. ['Day2','Day3','Day4','Day5','Day6','Day7']
+ANALYSIS_DAYS     = ['Day2','Day3', 'Day4','Day5', 'Day6', 'Day7']     # e.g. ['Day2','Day3','Day4','Day5','Day6','Day7']
                              # None = use all tracked sessions
 
 SMI_THRESHOLD     = 0.1          # above = spatially modulated
+
+# Cell selection
+# 'reliable_cells'       — basic reliability from preproc
+# 'combined_reliable'    — stricter: CC, Cohen's d, pattern correlation
+# 'reliable_valid_cells' — combined_reliable + valid SMI geometry (needs SMI h5)
+CELL_SELECTION = 'combined_reliable'
+
+# Fixed-pool tracking: if True, reliability is evaluated only on REFERENCE_DAY
+# and that fixed set is followed across all sessions.
+FIXED_POOL = True
 
 # check whether the fig_dir exists, if not create it
 OUTPUT_DIR = os.path.join(ANIMAL_DIR, "TrackedROIs")
@@ -51,9 +61,7 @@ if not os.path.exists(OUTPUT_DIR):
 # ── extractors for build_matrix ─────────────────────────────
 
 def _extract_smi(smi_file, roi_indices):
-    smi_all, valid, *_ = load_smi_session(smi_file)[:2], *load_smi_session(smi_file)[2:]
-    # Re-load cleanly
-    smi_all, valid, Rp, Rn, pref_pos, _ = load_smi_session(smi_file)
+    smi_all, *_ = load_smi_session(smi_file)
     out = np.full(len(roi_indices), np.nan)
     for i, roi in enumerate(roi_indices):
         if roi >= 0 and roi < len(smi_all):
@@ -223,7 +231,12 @@ def plot_proportion_modulated(smi_matrix, cell_layers, session_days, day_labels,
             continue
         rows = cell_layers[layer]
         data = smi_matrix[rows, :]
-        prop = np.nanmean(data > threshold, axis=0) * 100
+        valid = ~np.isnan(data)
+        prop = np.array([
+            np.sum(data[valid[:, s], s] > threshold) / np.sum(valid[:, s]) * 100
+            if np.sum(valid[:, s]) > 0 else np.nan
+            for s in range(data.shape[1])
+        ])
         n    = int(len(rows))
         ax.plot(x, prop, 's--', color=LAYER_COLORS[layer],
                 label=f"{layer} (n={n})", linewidth=1.5, markersize=5)
@@ -424,11 +437,29 @@ def main():
         smi_files = find_smi_files(ANIMAL_DIR)
     report_found_files("SMI files", smi_files, day_labels)
 
+    print("\n[2b] Finding preproc files...")
+    if session_dirs:
+        preproc_files = find_files_from_tracking(session_dirs, "*_preproc*.h5")
+    else:
+        preproc_files = find_preproc_files(ANIMAL_DIR)
+
     # Build matrices
     print("\n[3] Building SMI / Rp / Rn matrices...")
     smi_matrix = build_matrix(tracked_matrix, day_labels, smi_files, _extract_smi)
     rp_matrix  = build_matrix(tracked_matrix, day_labels, smi_files, _extract_Rp)
     rn_matrix  = build_matrix(tracked_matrix, day_labels, smi_files, _extract_Rn)
+
+    if CELL_SELECTION is not None:
+        ref_day = REFERENCE_DAY if FIXED_POOL else None
+        rel_mask = build_reliability_mask(tracked_matrix, day_labels, preproc_files,
+                                          cell_selection=CELL_SELECTION,
+                                          smi_files=smi_files,
+                                          reference_day=ref_day)
+        smi_matrix[~rel_mask] = np.nan
+        rp_matrix[~rel_mask]  = np.nan
+        rn_matrix[~rel_mask]  = np.nan
+        pool_str = f"fixed-pool ({REFERENCE_DAY})" if FIXED_POOL else "per-session"
+        print(f"  Applied {CELL_SELECTION} mask [{pool_str}]")
 
     n_valid = np.sum(~np.isnan(smi_matrix), axis=0)
     for d, nv in zip(day_labels, n_valid):

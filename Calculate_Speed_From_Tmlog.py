@@ -222,6 +222,18 @@ def tmlog_timestamps_to_seconds(timestamps_str, header_datetime, reference_hour)
 
         abs_datetimes.append(dt)
 
+    # Fix noon-crossing: per-timestamp correction flips 12:xx PM → 00:xx AM
+    for i in range(1, len(abs_datetimes)):
+        delta = (abs_datetimes[i] - abs_datetimes[i-1]).total_seconds()
+        if delta < -6 * 3600:
+            for j in range(i, len(abs_datetimes)):
+                abs_datetimes[j] = abs_datetimes[j] + datetime.timedelta(hours=12)
+            break
+        elif delta > 6 * 3600:
+            for j in range(i, len(abs_datetimes)):
+                abs_datetimes[j] = abs_datetimes[j] - datetime.timedelta(hours=12)
+            break
+
     abs_datetimes = np.array(abs_datetimes)
     elapsed_s = np.array(
         [(t - abs_datetimes[0]).total_seconds() for t in abs_datetimes]
@@ -280,8 +292,26 @@ def align_tmlog_to_2p(twop_filepath, tmlog_path):
     abs_time     = xml_dict["abs_time"]    # absolute times (s from start)
     rel_time     = xml_dict["rel_time"]    # relative inter-frame times
 
-    twop_rel_t   = abs_time               # seconds from t0_2p
     framerate    = 1.0 / rel_time[1]
+
+    # Build the 2p frame time axis (seconds from t0_2p).
+    # abs_time should be monotonically increasing to ~session_duration_s.
+    # For some Bruker sessions nF in the XML counts non-Frame children too,
+    # leaving trailing zeros — detect this and fall back to a uniform axis.
+    n_frames_xml = len(abs_time)
+    if abs_time[-1] < 1.0:
+        # Find the last non-zero entry to get the true frame count
+        nonzero = np.where(abs_time > 0)[0]
+        if len(nonzero) > 0:
+            n_frames_xml = nonzero[-1] + 1
+            twop_rel_t   = abs_time[:n_frames_xml]
+            print(f"  WARNING: abs_time has trailing zeros; trimmed to {n_frames_xml} frames.")
+        else:
+            # abs_time entirely zero — build uniform axis from framerate
+            twop_rel_t = np.arange(n_frames_xml) / framerate
+            print(f"  WARNING: abs_time entirely zero; using uniform axis at {framerate:.2f} Hz.")
+    else:
+        twop_rel_t = abs_time
 
     # ── Parse TMlog
     header_dt, ts_str, distance_raw, speed_raw = parse_tmlog(tmlog_path)
@@ -338,6 +368,104 @@ def align_tmlog_to_2p(twop_filepath, tmlog_path):
 # 3. Apply same lap filtering as Preprocess.py
 # ══════════════════════════════════════════════════════════════════════════
 
+def _load_vr_location(twop_filepath, vr_filepath):
+    """Load and align VRlog location to 2p frame times — WITHOUT loading suite2p.
+
+    Replicates the relevant parts of loadData.dataLoader.load_data() +
+    align_data() but skips TwoP/suite2p loading entirely.  Useful for
+    recordings where the suite2p output is in a sibling folder (multi-recording
+    sessions where all neural data were processed together in the first TSeries).
+
+    Returns
+    -------
+    interp_location : np.ndarray  (n_frames,)
+        VR position interpolated to each 2p frame (same as
+        vr_dict["interp_location"] from dataLoader.align_data()).
+    n_frames : int
+        Number of 2p frames (length of interp_location).
+    """
+    import datetime
+
+    # ── Read 2p XML for frame timestamps
+    tseries_name = os.path.basename(twop_filepath)
+    xml_path     = os.path.join(twop_filepath, f"{tseries_name}.xml")
+    xml_dict     = read_xml(xml_path)
+
+    t0_2p    = xml_dict["t0"]
+    abs_time = xml_dict["abs_time"]
+
+    # Handle trailing-zero artefact (same logic as align_tmlog_to_2p)
+    if abs_time[-1] < 1.0:
+        nonzero = np.where(abs_time > 0)[0]
+        n_xml   = nonzero[-1] + 1 if len(nonzero) > 0 else len(abs_time)
+        abs_time = abs_time[:n_xml]
+
+    # Build absolute datetime for each frame (mirror of loadData: abs_time[:-1])
+    twop_abs_t = np.array([
+        t0_2p + datetime.timedelta(seconds=float(t))
+        for t in abs_time[:-1]
+    ])
+    twop_rel_t = np.array([t.total_seconds() for t in (twop_abs_t - twop_abs_t[0])])
+    n_frames   = len(twop_abs_t)
+
+    # ── Parse VRlog (same as loadData.load_data)
+    raw_rows = []
+    with open(vr_filepath, "r") as fh:
+        for line in fh.readlines()[3:]:
+            parts = line.strip().split("\t")
+            if len(parts) >= 4:
+                raw_rows.append(parts)
+
+    vr_abs_str = np.array([r[0] for r in raw_rows])
+    vr_event   = np.array([r[2] for r in raw_rows])
+    vr_loc_raw = np.array([float(r[3]) for r in raw_rows])
+    vr_loc_raw[vr_loc_raw < 0] = 0.0
+
+    start_idx  = np.where(vr_event == 's')[0][0]
+    vr_abs_str = vr_abs_str[start_idx:]
+    vr_loc_raw = vr_loc_raw[start_idx:]
+
+    # ── Convert VR timestamps (same AM/PM correction as loadData.align_data)
+    ref_date = twop_abs_t[0].date()
+    ref_hour = twop_abs_t[0].hour
+    vr_abs_dt = []
+    for t_str in vr_abs_str:
+        dt = datetime.datetime.strptime(t_str, '%H.%M.%S.%f')
+        dt = dt.replace(year=ref_date.year, month=ref_date.month, day=ref_date.day)
+        if dt.hour < 12 and ref_hour >= 12:
+            dt = dt + datetime.timedelta(hours=12)
+        elif dt.hour >= 12 and ref_hour < 12:
+            dt = dt - datetime.timedelta(hours=12)
+        vr_abs_dt.append(dt)
+
+    # Fix noon-crossing: same correction as loadData.align_data
+    for i in range(1, len(vr_abs_dt)):
+        delta = (vr_abs_dt[i] - vr_abs_dt[i-1]).total_seconds()
+        if delta < -6 * 3600:
+            for j in range(i, len(vr_abs_dt)):
+                vr_abs_dt[j] = vr_abs_dt[j] + datetime.timedelta(hours=12)
+            break
+        elif delta > 6 * 3600:
+            for j in range(i, len(vr_abs_dt)):
+                vr_abs_dt[j] = vr_abs_dt[j] - datetime.timedelta(hours=12)
+            break
+
+    vr_abs_dt  = np.array(vr_abs_dt)
+    vr_rel_t   = np.array([(t - vr_abs_dt[0]).total_seconds() for t in vr_abs_dt])
+
+    # Align VR relative time to 2p: shift by (t0_vr_abs - t0_2p)
+    vr_aligned_rel_t = vr_rel_t + (vr_abs_dt[0] - twop_abs_t[0]).total_seconds()
+
+    # Clip to recording duration
+    clip_idx = np.searchsorted(vr_aligned_rel_t, twop_rel_t[-1], side='right')
+    vr_aligned_rel_t = vr_aligned_rel_t[:clip_idx]
+    vr_loc_clip      = vr_loc_raw[:clip_idx]
+
+    # Interpolate location to 2p frame times
+    interp_location = np.interp(twop_rel_t, vr_aligned_rel_t, vr_loc_clip)
+    return interp_location, n_frames
+
+
 def extract_laps_tmlog_speed(twop_filepath, vr_filepath, speed_tmlog_full,
                               processing_params):
     """Apply the same lap detection and filtering used in Preprocess.py to
@@ -368,101 +496,44 @@ def extract_laps_tmlog_speed(twop_filepath, vr_filepath, speed_tmlog_full,
     speed_tmlog_laps : list of np.ndarray
         Per-lap speed arrays (before concatenation).
     """
-    from helper.loadData import dataLoader
-    from helper.SpikeSmoothing import apply_temporal_offset
-    import numpy as np
-
     framerate      = float(processing_params["framerate"])
     optimal_offset = int(processing_params["optimal_offset"])
     min_dur        = float(processing_params["min_trial_duration_seconds"])
     max_dur        = float(processing_params["max_trial_duration_seconds"])
-    single_lap_treadmill = float(processing_params["single_lap_treadmill"])
 
-    # ── Re-load and align VRlog (need the position signal)
-    procData = dataLoader(twop_filepath, vr_filepath)
-    _, _, fr_check = procData.load_data()
-    twop_dict, vr_dict = procData.align_data()
+    # ── Align VRlog to 2p frame times without loading suite2p
+    location_full, n_loc = _load_vr_location(twop_filepath, vr_filepath)
 
-    # Apply temporal offset to get a dummy spike array the right shape
-    # (we only need the VRlog position, not the actual spikes)
-    n_cells  = twop_dict["sps"].shape[0]
-    n_frames = twop_dict["sps"].shape[1]
-    dummy_spks = np.zeros((n_cells, n_frames))
-    dummy_spks = apply_temporal_offset(dummy_spks, optimal_offset)
-
-    # ── Apply speed-based lap filtering (same parameters as Preprocess.py)
-    from helper.BehavioralDataFiltering import process_data_with_speed_filtering
-
-    filtered_spks_laps, filtered_location_laps, filtered_speed_laps, n_valid_laps = \
-        process_data_with_speed_filtering(
-            dummy_spks,
-            vr_dict["interp_location"],
-            min_trial_duration_seconds=min_dur,
-            max_trial_duration_seconds=max_dur,
-            framerate=framerate,
-            min_speed_cm_s=2.0,
-            frames_to_keep=5,
-        )
+    # ── Quick lap-count check (re-uses the same filtering parameters)
+    dummy_spks = np.zeros((1, n_loc))
+    _, _, _, n_valid_laps = process_data_with_speed_filtering(
+        dummy_spks,
+        location_full,
+        min_trial_duration_seconds=min_dur,
+        max_trial_duration_seconds=max_dur,
+        framerate=framerate,
+        min_speed_cm_s=2.0,
+        frames_to_keep=5,
+    )
 
     if n_valid_laps == 0:
         raise ValueError("No valid laps found when re-running lap detection for TMlog speed.")
 
-    # ── We need the original (pre-filter) frame indices for each lap.
-    # Re-run lap detection without speed filtering to get the raw lap frame indices.
-    from helper.BehavioralDataFiltering import reshape_into_laps_forward_only
-    import numpy as np
+    # loadData.py builds AbsoluteT from abs_time[:-1], so location_full has
+    # n_frames_xml-1 elements while speed_tmlog_full has n_frames_xml elements.
+    # Clip speed to location length to prevent off-by-one boundary errors.
+    speed_tmlog_full = speed_tmlog_full[:n_loc]
 
-    location_full = vr_dict["interp_location"]
     if np.max(location_full) < 393:
         track_length_au = np.max(location_full)
     else:
         track_length_au = 393.0
-    conversion_factor = 130.0 / (track_length_au - np.min(location_full))
 
-    spks_laps_raw, location_laps_raw, n_laps_raw = reshape_into_laps_forward_only(
-        dummy_spks, location_full,
-        use_fixed_threshold=True,
-        track_length_au=track_length_au,
-        min_lap_length=50,
-        plot_detection=False,
-    )
-
-    # We want to know: for each valid lap in the filtered output, what were the
-    # original frame start/end indices in the full-session array?
-    # Re-run with full logic to get corresponding frame masks.
-    # The simplest accurate approach: rebuild the TMlog speed for each valid lap
-    # using the speed_tmlog_full array and the known lap-level filtering masks.
-
-    # Because process_data_with_speed_filtering does not return which frames of
-    # the original session were kept, we reconstruct the mapping by comparing
-    # the output location arrays to the full-session location.
-    speed_tmlog_laps = []
-
-    # Build full-session location in cm
-    location_full_cm = location_full * conversion_factor
-
-    for lap_loc_cm in filtered_location_laps:
-        # Each element in lap_loc_cm is a cm position value.
-        # Match these positions to the corresponding indices in location_full_cm.
-        # Since laps are ordered, we can do this progressively.
-        # Strategy: find the run of consecutive indices in location_full_cm that
-        # best matches the lap_loc_cm values.
-        # This works because values are unique within a forward-running lap.
-        n_lap = len(lap_loc_cm)
-        # Extract speed_tmlog values for these frames by length-matched indexing.
-        # We will build a speed array the same length as lap_loc_cm using the
-        # already-filtered_speed_laps as position reference.
-        speed_tmlog_laps.append(np.full(n_lap, np.nan))
-
-    # ── Better approach: align by global frame index reconstruction
-    # We know: the original full-session 2p array has n_frames frames.
-    # speed_tmlog_full has n_frames values.
-    # We rebuild the per-lap speed by retracing the lap/frame selection.
-
+    # ── Rebuild per-lap TMlog speed using the same frame-selection logic
     speed_tmlog_laps = _extract_tmlog_speed_per_lap(
         speed_tmlog_full,
         location_full,
-        n_frames,
+        n_loc,
         track_length_au,
         min_dur, max_dur, framerate,
         optimal_offset,
@@ -583,10 +654,114 @@ def _extract_tmlog_speed_per_lap(speed_full, location_full, n_frames,
 
 
 # ══════════════════════════════════════════════════════════════════════════
-# 4. Main entry point: add TMlog speed to existing HDF5
+# 4a. Multi-recording helpers
 # ══════════════════════════════════════════════════════════════════════════
 
-def add_tmlog_speed_to_h5(preproc_h5_path, plot_comparison=True):
+def _collect_recording_folders(tseries_folder):
+    """Return all sibling TSeries* subfolders of the parent day folder, sorted.
+
+    For a multi-recording session the layout is:
+        Day1_folder/
+            TSeries-001/   ← tseries_folder (contains preproc_multi.h5)
+                TMlog*.txt, VRlog*.txt
+            TSeries-002/   ← second recording
+                TMlog*.txt, VRlog*.txt
+            ...
+
+    Parameters
+    ----------
+    tseries_folder : str
+        The TSeries folder that contains ``preproc_multi.h5``
+        (i.e., the first recording folder).
+
+    Returns
+    -------
+    list of str
+        All TSeries* sibling directories under the parent, sorted
+        alphabetically/numerically (recording order).
+    """
+    parent     = os.path.dirname(tseries_folder)
+    candidates = sorted([
+        c for c in glob.glob(os.path.join(parent, "TSeries*"))
+        if os.path.isdir(c)
+    ])
+    # Fallback: if the glob found nothing, just return the folder itself
+    return candidates if candidates else [tseries_folder]
+
+
+def _process_multi_recording(tseries_folder, processing_params):
+    """Extract and concatenate TMlog speed for all recordings in a multi-session.
+
+    Discovers sibling TSeries folders, processes each independently (align
+    TMlog → extract lap-filtered speed), then concatenates in recording order.
+
+    Parameters
+    ----------
+    tseries_folder : str
+        The first TSeries folder (same directory as ``preproc_multi.h5``).
+    processing_params : dict
+        Processing parameters from the ``preproc_multi.h5`` file.
+
+    Returns
+    -------
+    speed_tmlog_concat : np.ndarray
+        Concatenated lap-filtered TMlog speed (cm/s) across all recordings.
+    speed_dist_concat : np.ndarray
+        Same for the distance-derivative cross-check signal.
+    """
+    recording_folders = _collect_recording_folders(tseries_folder)
+    print(f"  Multi-recording: {len(recording_folders)} TSeries folder(s) found:")
+    for rf in recording_folders:
+        print(f"    {os.path.basename(rf)}")
+
+    all_speed_tmlog = []
+    all_speed_dist  = []
+
+    for rf in recording_folders:
+        print(f"\n  --- Recording: {os.path.basename(rf)} ---")
+
+        # ── Find TMlog for this recording
+        tmlog_files = sorted(glob.glob(os.path.join(rf, "TMlog*.txt")))
+        if len(tmlog_files) == 0:
+            raise FileNotFoundError(f"No TMlog*.txt found in {rf}")
+        if len(tmlog_files) > 1:
+            print(f"    WARNING: {len(tmlog_files)} TMlog files found, using first.")
+        tmlog_path = tmlog_files[0]
+        print(f"    TMlog : {os.path.basename(tmlog_path)}")
+
+        # ── Find VRlog for this recording
+        vr_files = sorted(glob.glob(os.path.join(rf, "VRlog*.txt")))
+        if len(vr_files) == 0:
+            raise FileNotFoundError(f"No VRlog*.txt found in {rf}")
+        if len(vr_files) > 1:
+            print(f"    WARNING: {len(vr_files)} VRlog files found, using first.")
+        vr_path = vr_files[0]
+        print(f"    VRlog : {os.path.basename(vr_path)}")
+
+        # ── Align TMlog to this recording's 2p frame times
+        _, speed_tmlog_full, speed_dist_full, _, _ = align_tmlog_to_2p(rf, tmlog_path)
+
+        # ── Extract lap-filtered speed for this recording segment
+        speed_tm_rec, _ = extract_laps_tmlog_speed(
+            rf, vr_path, speed_tmlog_full, processing_params
+        )
+        speed_di_rec, _ = extract_laps_tmlog_speed(
+            rf, vr_path, speed_dist_full, processing_params
+        )
+
+        print(f"    Frames after lap filtering: {len(speed_tm_rec)}")
+        all_speed_tmlog.append(speed_tm_rec)
+        all_speed_dist.append(speed_di_rec)
+
+    return np.concatenate(all_speed_tmlog), np.concatenate(all_speed_dist)
+
+
+# ══════════════════════════════════════════════════════════════════════════
+# 4b. Main entry point: add TMlog speed to existing HDF5
+# ══════════════════════════════════════════════════════════════════════════
+
+def add_tmlog_speed_to_h5(preproc_h5_path, plot_comparison=True,
+                          twop_filepath_override=None, vr_filepath_override=None):
     """Load an existing *_preproc.h5 file, compute TMlog-based speed, and
     save it as the key 'speed_tmlog_cm_s'.
 
@@ -599,6 +774,11 @@ def add_tmlog_speed_to_h5(preproc_h5_path, plot_comparison=True):
         Full path to the existing *_preproc.h5 file.
     plot_comparison : bool
         If True, plot a comparison of VRlog vs TMlog speed.
+    twop_filepath_override : str or None
+        If provided, use this path instead of the one stored in the h5.
+        Useful when the data has moved drives since preprocessing.
+    vr_filepath_override : str or None
+        If provided, use this VRlog path instead of the one stored in the h5.
     """
     import matplotlib.pyplot as plt
 
@@ -608,46 +788,99 @@ def add_tmlog_speed_to_h5(preproc_h5_path, plot_comparison=True):
 
     # ── 1. Load HDF5 metadata
     preproc = read_h5(preproc_h5_path)
-    twop_filepath    = str(preproc["twop_filepath"])
-    vr_filepath      = str(preproc["vr_filepath"])
+
+    def _decode(val):
+        """Return a clean str from either a str or bytes h5 value."""
+        if isinstance(val, bytes):
+            return val.decode('utf-8')
+        return str(val)
+
+    # ── Detect multi-recording FIRST so we can skip keys that don't exist
+    is_multi = "multi" in os.path.basename(preproc_h5_path).lower()
+
+    if twop_filepath_override:
+        twop_filepath = twop_filepath_override
+    elif "twop_filepath" in preproc:
+        twop_filepath = _decode(preproc["twop_filepath"])
+    else:
+        raise KeyError("'twop_filepath' not found in h5 and no override provided")
+
+    # vr_filepath is only needed for single-recording sessions;
+    # for multi-recording each TSeries folder has its own VRlog.
+    if not is_multi:
+        if vr_filepath_override:
+            vr_filepath = vr_filepath_override
+        elif "vr_filepath" in preproc:
+            vr_filepath = _decode(preproc["vr_filepath"])
+        else:
+            raise KeyError("'vr_filepath' not found in h5 and no override provided")
+    else:
+        vr_filepath = None  # resolved per-recording inside _process_multi_recording
+
     processing_params = preproc["processing_params"]
     speed_vrlog      = preproc["speed_cm_s"]          # existing VRlog speed
     n_frames_hdf5    = len(speed_vrlog)
 
     print(f"  twop_filepath : {twop_filepath}")
-    print(f"  vr_filepath   : {vr_filepath}")
+    if vr_filepath:
+        print(f"  vr_filepath   : {vr_filepath}")
     print(f"  HDF5 frames   : {n_frames_hdf5}")
 
-    # ── 2. Find TMlog file
-    tmlog_pattern = os.path.join(twop_filepath, "TMlog*.txt")
-    tmlog_files   = glob.glob(tmlog_pattern)
-    if len(tmlog_files) == 0:
-        raise FileNotFoundError(
-            f"No TMlog*.txt found in {twop_filepath}"
+    if is_multi:
+        # ── 3+4 (multi). Each sibling TSeries folder is processed independently;
+        #                 results are concatenated in recording order.
+        print("\nMulti-recording session detected — processing each TSeries folder separately...")
+        speed_tmlog_concat, speed_dist_concat = _process_multi_recording(
+            twop_filepath, processing_params
         )
-    if len(tmlog_files) > 1:
-        print(f"  WARNING: {len(tmlog_files)} TMlog files found, using first.")
-    tmlog_path = sorted(tmlog_files)[0]
-    print(f"  TMlog file    : {os.path.basename(tmlog_path)}")
+        framerate        = float(processing_params["framerate"])
+        speed_tmlog_full = None   # not available as single array for multi
 
-    # ── 3. Align TMlog to 2p frame times (full session)
-    print("\nAligning TMlog to 2p frame times...")
-    twop_rel_t, speed_tmlog_full, speed_dist_full, framerate, t0_2p = \
-        align_tmlog_to_2p(twop_filepath, tmlog_path)
+    else:
+        # ── 2. Find TMlog file (single-recording)
+        tmlog_pattern = os.path.join(twop_filepath, "TMlog*.txt")
+        tmlog_files   = glob.glob(tmlog_pattern)
+        if len(tmlog_files) == 0:
+            raise FileNotFoundError(
+                f"No TMlog*.txt found in {twop_filepath}"
+            )
+        if len(tmlog_files) > 1:
+            print(f"  WARNING: {len(tmlog_files)} TMlog files found, using first.")
+        tmlog_path = sorted(tmlog_files)[0]
+        print(f"  TMlog file    : {os.path.basename(tmlog_path)}")
 
-    print(f"  Full-session frames : {len(speed_tmlog_full)}")
-    print(f"  Framerate           : {framerate:.2f} Hz")
-    print(f"  TMlog speed range   : {speed_tmlog_full.min():.1f} – "
-          f"{speed_tmlog_full.max():.1f} cm/s")
+        # ── 2b. If vr_filepath is not overridden, check whether the stored path
+        #        exists; if not, try to find a VRlog*.txt in the TSeries folder.
+        if not vr_filepath_override and not os.path.isfile(vr_filepath):
+            vr_candidates = glob.glob(os.path.join(twop_filepath, "VRlog*.txt"))
+            if len(vr_candidates) == 0:
+                raise FileNotFoundError(
+                    f"VRlog not found at stored path ({vr_filepath}) "
+                    f"and no VRlog*.txt found in {twop_filepath}"
+                )
+            if len(vr_candidates) > 1:
+                print(f"  WARNING: {len(vr_candidates)} VRlog files found in TSeries folder, using first.")
+            vr_filepath = sorted(vr_candidates)[0]
+            print(f"  VRlog (auto)  : {os.path.basename(vr_filepath)}")
 
-    # ── 4. Extract per-lap TMlog speed (same filtering as preprocessing)
-    print("\nExtracting TMlog speed for valid laps...")
-    speed_tmlog_concat, speed_tmlog_laps = extract_laps_tmlog_speed(
-        twop_filepath, vr_filepath, speed_tmlog_full, processing_params
-    )
-    speed_dist_concat, _  = extract_laps_tmlog_speed(
-        twop_filepath, vr_filepath, speed_dist_full, processing_params
-    )
+        # ── 3. Align TMlog to 2p frame times (full session)
+        print("\nAligning TMlog to 2p frame times...")
+        twop_rel_t, speed_tmlog_full, speed_dist_full, framerate, t0_2p = \
+            align_tmlog_to_2p(twop_filepath, tmlog_path)
+
+        print(f"  Full-session frames : {len(speed_tmlog_full)}")
+        print(f"  Framerate           : {framerate:.2f} Hz")
+        print(f"  TMlog speed range   : {speed_tmlog_full.min():.1f} – "
+              f"{speed_tmlog_full.max():.1f} cm/s")
+
+        # ── 4. Extract per-lap TMlog speed (same filtering as preprocessing)
+        print("\nExtracting TMlog speed for valid laps...")
+        speed_tmlog_concat, speed_tmlog_laps = extract_laps_tmlog_speed(
+            twop_filepath, vr_filepath, speed_tmlog_full, processing_params
+        )
+        speed_dist_concat, _  = extract_laps_tmlog_speed(
+            twop_filepath, vr_filepath, speed_dist_full, processing_params
+        )
 
     # ── 5. Verify shape matches existing HDF5 temporal arrays
     n_tmlog = len(speed_tmlog_concat)
@@ -677,50 +910,86 @@ def add_tmlog_speed_to_h5(preproc_h5_path, plot_comparison=True):
         f.create_dataset("speed_dist_cm_s",  data=speed_dist_concat.astype(np.float64))
     print("  Done.")
 
-    # ── 7. Comparison statistics
-    print("\nSpeed comparison (filtered, concatenated laps):")
-    print(f"  VRlog  – mean: {speed_vrlog.mean():.2f}, "
-          f"median: {np.median(speed_vrlog):.2f}, "
-          f"max: {speed_vrlog.max():.2f} cm/s")
-    print(f"  TMlog  – mean: {speed_tmlog_concat.mean():.2f}, "
-          f"median: {np.median(speed_tmlog_concat):.2f}, "
-          f"max: {speed_tmlog_concat.max():.2f} cm/s")
-    corr = np.corrcoef(speed_vrlog[:len(speed_tmlog_concat)],
-                       speed_tmlog_concat)[0, 1]
-    print(f"  Pearson r (VRlog vs TMlog): {corr:.3f}")
+    # ── 7+8. Full-session VRlog vs TMlog comparison (single-recording only).
+    #        Skipped for multi-recording sessions because there is no single
+    #        continuous VRlog/TMlog pair to compare against.
+    if is_multi:
+        print("\nSkipping full-session speed comparison plot (multi-recording session).")
+        return speed_tmlog_concat
 
-    # ── 8. Optional plot
+    # Re-load VRlog and interpolate to 2P frame times (same n_frames as TMlog full).
+    # This avoids the lap-filtering mismatch that makes concatenated signals
+    # non-comparable frame-by-frame.
+    from helper.loadData import dataLoader
+    procData = dataLoader(twop_filepath, vr_filepath)
+    procData.load_data()
+    _, vr_dict_cmp = procData.align_data()
+
+    loc_full    = np.array(vr_dict_cmp["interp_location"], dtype=float)
+    n_full      = len(loc_full)
+
+    # Clip to same length as TMlog full-session signal
+    n_cmp = min(n_full, len(speed_tmlog_full))
+    loc_cmp = loc_full[:n_cmp]
+
+    # Convert to cm and differentiate to get full-session VRlog speed
+    loc_range = np.max(loc_cmp) - np.min(loc_cmp)
+    if loc_range > 0:
+        conv = 130.0 / loc_range
+    else:
+        conv = 1.0
+    loc_cm_full   = loc_cmp * conv
+    vr_speed_full = np.abs(np.diff(loc_cm_full)) * framerate
+    vr_speed_full = np.concatenate(([vr_speed_full[0]], vr_speed_full))
+    # Clip outlier spikes (teleportation) to 60 cm/s for display
+    vr_speed_disp = np.clip(vr_speed_full, 0, 60)
+    tm_speed_disp = speed_tmlog_full[:n_cmp]
+
+    corr_full = np.corrcoef(vr_speed_disp, tm_speed_disp)[0, 1]
+
+    print("\nSpeed comparison (full session, before lap filtering):")
+    print(f"  VRlog  – mean: {vr_speed_full.mean():.2f}, "
+          f"median: {np.median(vr_speed_full):.2f}, "
+          f"max: {vr_speed_full.max():.2f} cm/s")
+    print(f"  TMlog  – mean: {tm_speed_disp.mean():.2f}, "
+          f"median: {np.median(tm_speed_disp):.2f}, "
+          f"max: {tm_speed_disp.max():.2f} cm/s")
+    print(f"  Pearson r (VRlog vs TMlog, full session): {corr_full:.3f}")
+
+    # ── 8. Optional plot (full-session comparison)
     if plot_comparison:
-        fig, axes = plt.subplots(3, 1, figsize=(14, 8), sharex=True)
-        t_axis = np.arange(n_frames_hdf5) / framerate
+        t_axis_full = twop_rel_t[:n_cmp]
 
-        axes[0].plot(t_axis, speed_vrlog,       color="steelblue", lw=0.6,
-                     label="VRlog speed (diff of VR position)")
+        fig, axes = plt.subplots(3, 1, figsize=(14, 8), sharex=True)
+
+        axes[0].plot(t_axis_full, vr_speed_disp, color="steelblue", lw=0.6,
+                     label="VRlog speed (clipped to 60 cm/s)")
         axes[0].set_ylabel("Speed (cm/s)")
-        axes[0].set_title("VRlog-derived speed (existing HDF5)")
+        axes[0].set_title("VRlog-derived speed (full session)")
         axes[0].legend(fontsize=8)
 
-        axes[1].plot(t_axis, speed_tmlog_concat, color="darkorange", lw=0.6,
+        axes[1].plot(t_axis_full, tm_speed_disp, color="darkorange", lw=0.6,
                      label="TMlog speed (encoder column)")
         axes[1].set_ylabel("Speed (cm/s)")
-        axes[1].set_title("TMlog speed (treadmill encoder)")
+        axes[1].set_title("TMlog speed (full session)")
         axes[1].legend(fontsize=8)
 
-        axes[2].plot(t_axis, speed_vrlog - speed_tmlog_concat[:n_frames_hdf5],
+        axes[2].plot(t_axis_full, vr_speed_disp - tm_speed_disp,
                      color="gray", lw=0.5)
         axes[2].axhline(0, color="k", lw=0.8)
         axes[2].set_ylabel("Δ speed (cm/s)")
         axes[2].set_xlabel("Time (s)")
-        axes[2].set_title(f"Difference (VRlog − TMlog), r = {corr:.3f}")
+        axes[2].set_title(f"Difference (VRlog − TMlog), full-session r = {corr_full:.3f}")
 
-        fig.suptitle(f"Speed comparison\n{os.path.basename(preproc_h5_path)}",
+        fig.suptitle(f"Speed comparison (full session)\n{os.path.basename(preproc_h5_path)}",
                      fontsize=11)
         plt.tight_layout()
 
         fig_path = preproc_h5_path.replace(".h5", "_speed_comparison.png")
+        
         fig.savefig(fig_path, dpi=150)
         print(f"\n  Comparison plot saved: {fig_path}")
-        plt.show()
+        # plt.show()
 
     return speed_tmlog_concat
 
@@ -732,20 +1001,78 @@ def add_tmlog_speed_to_h5(preproc_h5_path, plot_comparison=True):
 if __name__ == "__main__":
 
     # ── Edit this list to point at your *_preproc.h5 files ───────────────
+    # Each entry is a path to a *_preproc.h5 file.
+    # twop_filepath is always overridden to the h5's own folder so that
+    # TMlog and VRlog are found there regardless of what was stored at preprocessing.
     preproc_h5_paths = [
-        r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251009_JSY_JSY052_SpatialModulation_Day1\TSeries-10092025-1542-002\251009_JSY052_preproc.h5",
-        # Add more paths here for other days/animals:
-        # r"...\251010_JSY052_preproc.h5",
-    ]
+        # Day 1 — preproc_multi.h5 may lack twop/vr_filepath keys; tseries folder override handles both
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251030_JSY_JSY054_SpMod_Day1\TSeries-10302025-1512-001\10302025_JSY038_preproc_multi.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251031_JSY_JSY054_SpMod_Day2\TSeries-10312025-1751-001\10312025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251101_JSY_JSY054_SpMod_Day3\TSeries-11012025-1725-001\11012025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251102_JSY_JSY054_SpMod_Day4\TSeries-11022025-1642-001\11022025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251103_JSY_JSY054_SpMod_Day5\TSeries-11032025-1715-001\11032025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251104_JSY_JSY054_SpMod_Day6\TSeries-11042025-1418-001\11042025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251105_JSY_JSY054_SpMod_Day7\TSeries-11052025-1512-001\11052025_JSY038_preproc.h5",
+        # # Add other animals below:
+        # r"D:\...\JSY052_ChronicImaging\...\XXXXXX_JSY052_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251205_JSY_JSY055_SpatialModulation_Day1\TSeries-12052025-1740-001\12052025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251206_JSY_JSY055_SpatialModulation_Day2\TSeries-12062025-1810-001\12062025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251207_JSY_JSY055_SpatialModulation_Day3\TSeries-12072025-1825-001\12072025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251208_JSY_JSY055_SpatialModulation_Day4\TSeries-12082025-1633-001\12082025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251209_JSY_JSY055_SpatialModualtion_Day5\TSeries-12092025-2000-001\12092025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251210_JSY_JSY055_SpatialModulation_Day6\TSeries-12102025-1702-001\12102025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251211_JSY_JSY055_SpatialModulation_Day7\TSeries-12112025-1631-001\12112025_JSY038_preproc.h5",
+        
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251009_JSY_JSY052_SpatialModulation_Day1\TSeries-10092025-1542-002\10092025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251010_JSY_JSY052_SpatialModulation_Day2\TSeries-10102025-0916-001\10102025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251011_JSY_JSY052_SpatialModulation_Day3\TSeries-10112025-1441-002\10112025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-001\10122025_JSY038_preproc_multi.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251013_JSY_JSY052_SpatialModulation_Day5\TSeries-10132025-1236-001\10132025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251014_JSY_JSY052_SpatialModulation_Day6\TSeries-10142025-1647-003\10142025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251015_JSY_JSY052_SpatialModulation_Day7\TSeries-10152025-1103-001\10152025_JSY038_preproc.h5",
+        
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251101_JSY_JSY051_SpMod_Day1\TSeries-11012025-1725-001\11012025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251102_JSY_JSY051_SpMod_Day2\TSeries-11022025-1642-001\11022025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251103_JSY_JSY051_SpMod_Day3\TSeries-11032025-1715-001\11032025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251104_JSY_JSY051_SpMod_Day4\TSeries-11042025-1418-001\11042025_JSY038_preproc.h5",
+        r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251105_JSY_JSY051_SpMod_Day5\TSeries-11052025-1512-002\11052025_JSY038_preproc.h5",
+        
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1\TSeries-09062025-1308-001\09062025_JSY038_preproc_multi.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2\TSeries-09072025-1257-001\09072025_JSY038_preproc_multi.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3\TSeries-09082025-1540-001\09082025_JSY038_preproc_multi.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250909_JSY_JSY044_SpatialModulation_Day4\TSeries-09092025-1256-001\09092025_JSY038_preproc_multi.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250910_JSY_JSY044_SpatialModulation_Day5\TSeries-09102025-1340-001\09102025_JSY038_preproc_multi.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250911_JSY_JSY044_SpatialModulation_Day6\TSeries-09112025-1414-001\09112025_JSY038_preproc_multi.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250912_JSY_JSY044_SpatialModulation_Day7\TSeries-09122025-1334-001\09122025_JSY038_preproc_multi.h5",
+        
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250616_JSY_JSY041_SpatialModulation_Day1_V1Prism\TSeries-06162025-1521-001\06162025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250618_JSY_JSY041_SpatialModulation_Day3_V1Prism\TSeries-06182025-1641-001\06182025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250620_JSY_JSY041_SpatialModulation_Day5_V1Prism\TSeries-06202025-1515-001\06202025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250622_JSY_JSY041_SpatialModulation_Day7_V1Prism\TSeries-06222025-1550-001\06222025_JSY038_preproc.h5",
+        
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\250620_JSY_JSY040_SpatialModulation_Day1_V1Prism\TSeries-06202025-1515-001\06202025_JSY038_preproc.h5",
+        # r"D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\250622_JSY_JSY040_SpatialModulation_Day3_V1Prism\TSeries-06222025-1550-001\06222025_JSY038_preproc.h5",
+    ]   
     # ─────────────────────────────────────────────────────────────────────
 
     successful = []
     failed     = []
 
-    for h5_path in preproc_h5_paths:
+    for entry in preproc_h5_paths:
+        # Entry is either a plain path string or (h5_path, vr_filepath_override)
+        if isinstance(entry, tuple):
+            h5_path, vr_override = entry
+        else:
+            h5_path, vr_override = entry, None
+
         print(f"\nProcessing: {os.path.basename(h5_path)}")
+        # Always use the folder containing the h5 as twop_filepath,
+        # so the TMlog is found regardless of what drive was used at preprocessing.
+        tseries_folder = os.path.dirname(h5_path)
         try:
-            add_tmlog_speed_to_h5(h5_path, plot_comparison=True)
+            add_tmlog_speed_to_h5(h5_path, plot_comparison=True,
+                                  twop_filepath_override=tseries_folder,
+                                  vr_filepath_override=vr_override)
             successful.append(h5_path)
         except Exception as e:
             failed.append((h5_path, str(e)))

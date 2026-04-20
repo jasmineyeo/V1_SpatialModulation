@@ -50,6 +50,9 @@ from sklearn.metrics import silhouette_score
 # ============================================================
 
 ANIMALS = {
+    'JSY040': r"D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\PCA\JSY040_pca_data.h5",  # excluded: outlier Visually responsive proportions
+    # 'JSY041': r"D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\PCA\JSY041_pca_data.h5",  # excluded: outlier Visually responsive proportions
+
     # 'JSY044': r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\PCA\JSY044_pca_data.h5",  # excluded: inverted layer gradient
     'JSY052': r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\PCA\JSY052_pca_data.h5",  # excluded: outlier Visually responsive proportions
     'JSY051': r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\PCA\JSY051_pca_data.h5",
@@ -62,18 +65,30 @@ N_CLUSTER_PCS    = 5      # top PCs used for k-means
 K_RANGE          = range(2, 8)
 OVERRIDE_K       = None   # set to int to force a specific k
 
-OUTPUT_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\across_animals_PCA"
+USE_ALIGNED_PROFILES =  False   # True  → use spatial_profiles_aligned (type-aware shifted)
+                               # False → use spatial_profiles_zscore  (unshifted)
+
+OUTPUT_DIR = r"D:\V1_SpatialModulation\2p\V1_prism\across_animals_PCA_testing_knone_WO4144"
 
 # ============================================================
 
 LAYER_ORDER  = ['L2/3', 'L4', 'L5', 'L6']
 LAYER_COLORS = {'L2/3': '#4CAF50', 'L4': '#2196F3', 'L5': '#FF9800', 'L6': '#9C27B0'}
+
+# All animals plotted in black; distinguished by marker shape only
 ANIMAL_COLORS = {
-    'JSY044': '#9467bd',
-    'JSY051': '#1f77b4',
-    'JSY052': '#ff7f0e',
-    'JSY054': '#2ca02c',
-    'JSY055': '#d62728',
+    'JSY044': 'black',
+    'JSY051': 'black',
+    'JSY052': 'black',
+    'JSY054': 'black',
+    'JSY055': 'black',
+}
+ANIMAL_MARKERS = {
+    'JSY044': 'o',
+    'JSY051': 's',
+    'JSY052': '^',
+    'JSY054': 'D',
+    'JSY055': 'v',
 }
 
 
@@ -85,12 +100,15 @@ def load_animal(animal_id, filepath):
     Returns a dict with profiles, labels, session order, bin info.
     """
     with h5py.File(filepath, 'r') as f:
-        if 'features/spatial_profiles_session_corrected' in f:
-            profiles = f['features/spatial_profiles_session_corrected'][:]
-        elif 'features/spatial_profiles_aligned' in f:
+        if USE_ALIGNED_PROFILES and 'features/spatial_profiles_aligned' in f:
             profiles = f['features/spatial_profiles_aligned'][:]
+            print(f"  {animal_id}: using type-aware aligned profiles")
+        elif not USE_ALIGNED_PROFILES and 'features/spatial_profiles_session_corrected' in f:
+            profiles = f['features/spatial_profiles_session_corrected'][:]
+            print(f"  {animal_id}: using session-corrected profiles")
         else:
             profiles = f['features/spatial_profiles_zscore'][:]
+            print(f"  {animal_id}: using z-scored profiles (unshifted)")
 
         bin_centers        = f['metadata/bin_centers_trimmed'][:]
         landmark_positions = f['metadata/landmark_positions'][:]
@@ -200,23 +218,34 @@ def assign_semantic_labels(raw_labels, profiles, n_types,
                 used.add(k)
                 return k
 
-    names[_pick(np.argsort(peak_bins))]       = 'Adaptation-like'
+    # 1. Earliest peak → Early-responding/Adaptation-like
+    names[_pick(np.argsort(peak_bins))]       = 'Early-responding/Adaptation-like'
+    # 2. Latest peak → LD4-preferring (reward landmark)
     names[_pick(np.argsort(peak_bins)[::-1])] = 'LD4-preferring'
-    ranges = mean_profiles.max(axis=1) - mean_profiles.min(axis=1)
-    if len(used) < n_types:
-        names[_pick(np.argsort(ranges))] = 'Visually responsive'
-
+    # 3. Among remaining, closest peak to LD1 landmark → LD1-preferring
+    ld1_cm = landmark_positions[0] if len(landmark_positions) > 0 else 25.0
+    peak_cms = np.array([
+        bin_centers[peak_bins[k]] if peak_bins[k] < len(bin_centers) else np.inf
+        for k in range(n_types)
+    ])
+    remaining = [k for k in range(n_types) if k not in used]
+    if remaining:
+        ld1_closest = remaining[int(np.argmin([abs(peak_cms[k] - ld1_cm)
+                                               for k in remaining]))]
+        names[_pick([ld1_closest])] = 'LD1-preferring'
+    # 4. Any remaining cluster → Intermediate spatial
     for k in range(n_types):
         if names[k] is None:
-            peak_cm  = bin_centers[peak_bins[k]] if peak_bins[k] < len(bin_centers) else -1
-            names[k] = f'Peak~{peak_cm:.0f}cm'
+            names[k] = 'Intermediate spatial'
 
+    # Cluster colours chosen to avoid layer palette (green, blue, orange, purple)
     base_colors = {
-        'Adaptation-like':    '#E53935',
-        'LD4-preferring':     '#4CAF50',
-        'Visually responsive':'#1E88E5',
+        'Early-responding/Adaptation-like': '#AD1457',  # rose/magenta
+        'LD4-preferring':                   '#00838F',  # teal
+        'LD1-preferring':                   '#558B2F',  # olive green
+        'Intermediate spatial':             '#6D4C41',  # brown
     }
-    extra = ['#FF9800', '#9C27B0', '#00BCD4', '#795548']
+    extra = ['#E65100', '#1565C0', '#4A148C', '#00695C']
     ec, colors = 0, []
     for name in names:
         colors.append(base_colors.get(name, extra[ec % len(extra)]))
@@ -261,7 +290,7 @@ def plot_scree(pca, n_cluster_pcs, output_path=None):
                label=f'Clustering uses top {n_cluster_pcs} PCs')
     ax.set_xlabel('PC')
     ax.set_ylabel('Variance explained (%)')
-    ax.legend(fontsize=8)
+    ax.legend(fontsize=23)
     ax.grid(True, alpha=0.3, axis='y')
     plt.tight_layout()
     if output_path:
@@ -292,29 +321,28 @@ def plot_k_selection(sil_scores, inertias, k_range, optimal_k, output_path=None)
 def plot_pc_scatter(pc_scores, raw_labels, animal_labels,
                     type_names, type_colors, animal_ids, output_path=None):
     """PC1 vs PC2 scatter: colour = cluster, marker = animal."""
-    markers = ['o', 's', '^', 'D', 'v', 'P']
     fig, ax = plt.subplots(figsize=(7, 5))
     fig.suptitle('Pooled PCA — PC scatter (colour=cluster, marker=animal)',
                  fontweight='bold')
     for t, (name, col) in enumerate(zip(type_names, type_colors)):
-        for ai, animal in enumerate(animal_ids):
+        for animal in animal_ids:
             m = (raw_labels == t) & (animal_labels == animal)
             ax.scatter(pc_scores[m, 0], pc_scores[m, 1],
-                       c=col, marker=markers[ai % len(markers)],
+                       c=col, marker=ANIMAL_MARKERS.get(animal, 'o'),
                        alpha=0.4, s=12,
                        label=f'{name} / {animal}' if t == 0 else '')
     # Cluster legend
     cluster_handles = [mpatches.Patch(color=type_colors[t], label=type_names[t])
                        for t in range(len(type_names))]
     # Animal legend
-    animal_handles  = [plt.Line2D([0], [0], marker=markers[ai % len(markers)],
+    animal_handles  = [plt.Line2D([0], [0], marker=ANIMAL_MARKERS.get(animal, 'o'),
                                   color='gray', linestyle='None', markersize=6,
                                   label=animal)
-                       for ai, animal in enumerate(animal_ids)]
-    leg1 = ax.legend(handles=cluster_handles, fontsize=7,
+                       for animal in animal_ids]
+    leg1 = ax.legend(handles=cluster_handles, fontsize=12,
                      loc='upper left',  title='Cluster')
     ax.add_artist(leg1)
-    ax.legend(handles=animal_handles,  fontsize=7,
+    ax.legend(handles=animal_handles,  fontsize=12,
               loc='upper right', title='Animal')
     ax.set_xlabel('PC1')
     ax.set_ylabel('PC2')
@@ -595,7 +623,8 @@ def plot_pooled_proportions_by_layer(pooled, raw_labels, layer_list,
                 lm = al == layer
                 n  = int(np.sum(lm))
                 vals.append(np.mean(rl[lm] == t) * 100 if n > 0 else np.nan)
-            ax.scatter(xpos, vals, color=ANIMAL_COLORS.get(animal, 'black'),
+            ax.scatter(xpos, vals, color='black',
+                       marker=ANIMAL_MARKERS.get(animal, 'o'),
                        s=60, zorder=3, label=animal, clip_on=False)
 
         ax.set_xticks(xpos)
@@ -605,8 +634,9 @@ def plot_pooled_proportions_by_layer(pooled, raw_labels, layer_list,
         ax.set_ylim(0, None)
         ax.grid(True, alpha=0.2, axis='y')
         if t == n_types - 1:
-            animal_handles = [mpatches.Patch(color=ANIMAL_COLORS.get(a, 'black'),
-                                             label=a)
+            animal_handles = [plt.Line2D([0], [0], color='black',
+                                         marker=ANIMAL_MARKERS.get(a, 'o'),
+                                         linestyle='None', markersize=6, label=a)
                               for a in animal_ids]
             ax.legend(handles=animal_handles, fontsize=7, loc='upper right')
     plt.tight_layout()
@@ -689,9 +719,9 @@ def run_layer_effect_fisher(pooled, raw_labels, layer_list, n_types, type_names)
 def run_experience_effect_fisher(pooled, raw_labels, layer_list, type_names):
     """
     Experience effect: proportion ~ recording day.
-    Per animal × layer: OLS regression.
-    Across animals: Fisher's method per cell type × layer.
-    Returns results[tname][layer] = {
+    Per animal (collapsed across layers) + per animal × layer: OLS regression.
+    Across animals: Fisher's method per cell type (collapsed) and per cell type × layer.
+    Returns results[tname]['all_layers'] and results[tname][layer] = {
         'animals': [...], 'slopes': [...], 'p_vals': [...],
         'fisher_p': float, 'consistent': bool, 'mean_slope': float }
     """
@@ -702,6 +732,63 @@ def run_experience_effect_fisher(pooled, raw_labels, layer_list, type_names):
     for t, tname in enumerate(type_names):
         print(f"\n  {tname}:")
         results[tname] = {}
+
+        # ── Collapsed across all layers ───────────────────────────────────────
+        print("    all layers (collapsed):")
+        per_animal_p, per_animal_dir, slopes_out, animals_out = [], [], [], []
+
+        for animal in animal_ids:
+            amask = pooled['animal_labels'] == animal
+            sl    = pooled['session_labels'][amask]
+            rl    = raw_labels[amask]
+            so    = pooled['animal_data'][animal]['session_order']
+            days  = np.array([int(s.replace('Day', '')) for s in so], dtype=float)
+
+            props, valid_days = [], []
+            for si, sess in enumerate(so):
+                mask = (sl == sess)
+                n    = int(np.sum(mask))
+                if n == 0:
+                    continue
+                props.append(np.mean(rl[mask] == t) * 100)
+                valid_days.append(days[si])
+
+            if len(valid_days) < 3:
+                continue
+            try:
+                slope, _, _, p, _ = linregress(np.array(valid_days),
+                                               np.array(props))
+                per_animal_p.append(p)
+                per_animal_dir.append(1 if slope > 0 else -1)
+                slopes_out.append(slope)
+                animals_out.append(animal)
+                print(f"      {animal}: slope={slope:+.2f}%/day  "
+                      f"p={p:.4f}  {_sig_stars(p)}")
+            except Exception as e:
+                print(f"      {animal}: failed ({e})")
+
+        fisher_p   = np.nan
+        consistent = False
+        if len(per_animal_p) >= 2:
+            _, fisher_p = combine_pvalues(per_animal_p, method='fisher')
+            consistent  = len(set(per_animal_dir)) == 1
+            dir_str = ('all increase' if all(d > 0 for d in per_animal_dir)
+                       else 'all decrease' if all(d < 0 for d in per_animal_dir)
+                       else 'inconsistent direction')
+            print(f"      Fisher combined: p={fisher_p:.4f}  "
+                  f"{_sig_stars(fisher_p)}  [{dir_str}]"
+                  f"{'  ✓' if consistent else '  ✗'}")
+
+        results[tname]['all_layers'] = {
+            'animals':    animals_out,
+            'slopes':     slopes_out,
+            'p_vals':     per_animal_p,
+            'fisher_p':   fisher_p,
+            'consistent': consistent,
+            'mean_slope': float(np.mean(slopes_out)) if slopes_out else np.nan,
+        }
+
+        # ── Per layer ─────────────────────────────────────────────────────────
         for layer in layer_list:
             print(f"    {layer}:")
             per_animal_p, per_animal_dir, slopes_out, animals_out = [], [], [], []
@@ -763,6 +850,217 @@ def run_experience_effect_fisher(pooled, raw_labels, layer_list, type_names):
     return results
 
 
+def run_session_trend_tests_fisher(pooled, raw_labels, layer_list, type_names,
+                                    n_early=2, n_late=2):
+    """
+    Per cell type × layer × animal:
+      1. KW across sessions — omnibus "did anything change?"
+      2. Early vs late MW-U — net direction.
+    Across animals: Fisher's method on KW p-values.
+
+    Returns results[tname][layer] = {
+        'per_animal': {animal: {'kw_p', 'mw_p', 'direction',
+                                'early_mean', 'late_mean', 'days', 'props'}},
+        'fisher_p': float, 'consistent_direction': bool,
+        'dominant_direction': str }
+    """
+    print(f"\n── Session trend: KW (omnibus) + early({n_early}) vs "
+          f"late({n_late}) MW-U + Fisher's combined ──")
+    animal_ids = pooled['animal_ids']
+    results = {}
+
+    for t, tname in enumerate(type_names):
+        print(f"\n  {tname}:")
+        results[tname] = {}
+        for layer in layer_list:
+            print(f"    {layer}:")
+            per_animal_kw_p, directions = [], []
+            per_animal = {}
+
+            for animal in animal_ids:
+                amask = pooled['animal_labels'] == animal
+                al    = pooled['layer_labels'][amask]
+                sl    = pooled['session_labels'][amask]
+                rl    = raw_labels[amask]
+                so    = pooled['animal_data'][animal]['session_order']
+                days  = np.array([int(s.replace('Day', '')) for s in so],
+                                 dtype=float)
+
+                # Per-session proportions
+                props, valid_days = [], []
+                for si, sess in enumerate(so):
+                    mask = (sl == sess) & (al == layer)
+                    n    = int(np.sum(mask))
+                    if n == 0:
+                        continue
+                    props.append(np.mean(rl[mask] == t) * 100)
+                    valid_days.append(days[si])
+
+                if len(props) < 3:
+                    continue
+
+                props      = np.array(props)
+                valid_days = np.array(valid_days)
+
+                # KW across sessions
+                kw_groups = []
+                for sess in so:
+                    mask = (sl == sess) & (al == layer)
+                    if np.sum(mask) == 0:
+                        continue
+                    kw_groups.append((rl[mask] == t).astype(float))
+
+                kw_p = np.nan
+                if len(kw_groups) >= 2:
+                    try:
+                        _, kw_p = kruskal(*kw_groups)
+                    except Exception:
+                        pass
+
+                # Early vs late MW-U
+                early_vals = props[:n_early]
+                late_vals  = props[len(props) - n_late:]
+                mw_p, direction = np.nan, 'n/a'
+                if len(early_vals) >= 1 and len(late_vals) >= 1:
+                    try:
+                        _, mw_p = mannwhitneyu(early_vals, late_vals,
+                                               alternative='two-sided')
+                        direction = ('increase'
+                                     if np.mean(late_vals) > np.mean(early_vals)
+                                     else 'decrease')
+                    except Exception:
+                        pass
+
+                print(f"      {animal}: KW p={kw_p:.4f} {_sig_stars(kw_p)}  |  "
+                      f"early={np.mean(early_vals):.1f}% → "
+                      f"late={np.mean(late_vals):.1f}%  "
+                      f"MW p={mw_p:.4f} {_sig_stars(mw_p)}  [{direction}]")
+
+                if not np.isnan(kw_p):
+                    per_animal_kw_p.append(kw_p)
+                    directions.append(direction)
+                per_animal[animal] = {
+                    'kw_p': kw_p, 'mw_p': mw_p, 'direction': direction,
+                    'early_mean': float(np.mean(early_vals)),
+                    'late_mean':  float(np.mean(late_vals)),
+                    'days': valid_days, 'props': props,
+                }
+
+            fisher_p = np.nan
+            consistent = False
+            dominant   = 'n/a'
+            if len(per_animal_kw_p) >= 2:
+                _, fisher_p = combine_pvalues(per_animal_kw_p, method='fisher')
+                consistent  = len(set(directions)) == 1
+                n_inc = directions.count('increase')
+                n_dec = directions.count('decrease')
+                dominant = ('increase' if n_inc > n_dec else
+                            'decrease' if n_dec > n_inc else 'mixed')
+                print(f"      Fisher combined: p={fisher_p:.4f} "
+                      f"{_sig_stars(fisher_p)}  [{dominant}]"
+                      f"{'  ✓' if consistent else '  ✗'}")
+
+            results[tname][layer] = {
+                'per_animal':          per_animal,
+                'fisher_p':            fisher_p,
+                'consistent_direction': consistent,
+                'dominant_direction':  dominant,
+            }
+
+    return results
+
+
+def plot_session_trend_across_animals(trend_results, pooled, layer_list,
+                                       type_names, type_colors,
+                                       n_early=2, n_late=2,
+                                       output_path=None):
+    """
+    Grid: rows = cell types, columns = layers.
+    Each panel: per-animal proportion trajectories (coloured by animal),
+    with early/late shading and Fisher KW p + dominant direction annotated.
+    """
+    animal_ids = pooled['animal_ids']
+    n_types    = len(type_names)
+    n_layers   = len(layer_list)
+
+    fig, axes = plt.subplots(n_types, n_layers,
+                             figsize=(4 * n_layers, 3.5 * n_types),
+                             sharey='row', sharex='col')
+    fig.suptitle('Session trend: KW omnibus + early vs late (per animal)',
+                 fontweight='bold')
+
+    if n_types == 1:
+        axes = axes[np.newaxis, :]
+    if n_layers == 1:
+        axes = axes[:, np.newaxis]
+
+    for t, tname in enumerate(type_names):
+        for li, layer in enumerate(layer_list):
+            ax  = axes[t, li]
+            res = trend_results[tname].get(layer, {})
+
+            if t == 0:
+                ax.set_title(layer,
+                             color=LAYER_COLORS.get(layer, 'black'),
+                             fontweight='bold')
+            if li == 0:
+                ax.set_ylabel(f'{tname}\n% cells',
+                              color=type_colors[t], fontsize=8)
+
+            per_animal = res.get('per_animal', {})
+            if not per_animal:
+                ax.text(0.5, 0.5, 'no data', ha='center', va='center',
+                        transform=ax.transAxes, fontsize=7, color='gray')
+                ax.set_xlabel('Session index' if t == n_types - 1 else '')
+                ax.grid(True, alpha=0.2)
+                continue
+
+            # Find max n_sessions for x-axis
+            max_sess = max(len(v['props']) for v in per_animal.values()
+                           if v is not None)
+
+            # Shade early / late
+            ax.axvspan(-0.5, n_early - 0.5,
+                       color='skyblue', alpha=0.12, label='early')
+            ax.axvspan(max_sess - n_late - 0.5, max_sess - 0.5,
+                       color='salmon', alpha=0.12, label='late')
+
+            for animal, ares in per_animal.items():
+                if ares is None:
+                    continue
+                xpos = np.arange(len(ares['props']))
+                ax.plot(xpos, ares['props'],
+                        color='black', linewidth=1.5, alpha=0.7,
+                        marker=ANIMAL_MARKERS.get(animal, 'o'),
+                        markersize=4, label=animal)
+
+            fisher_p  = res.get('fisher_p', np.nan)
+            dominant  = res.get('dominant_direction', 'n/a')
+            consistent = res.get('consistent_direction', False)
+            # kw_str  = (f"Fisher KW p={fisher_p:.3f} {_sig_stars(fisher_p)}"
+            #            if not np.isnan(fisher_p) else "Fisher KW: n/a")
+            # dir_str = f"{dominant}{'  ✓' if consistent else '  ✗'}"
+            # ax.annotate(f"{kw_str}\n{dir_str}",
+            #             xy=(0.03, 0.97), xycoords='axes fraction',
+            #             fontsize=6.5, va='top', color='black')
+
+            ax.set_xlabel('Session index' if t == n_types - 1 else '')
+            ax.set_xticks(range(max_sess))
+            ax.grid(True, alpha=0.2)
+
+    # Animal marker legend on last panel
+    animal_handles = [plt.Line2D([0], [0], color='black',
+                                 marker=ANIMAL_MARKERS.get(a, 'o'),
+                                 linewidth=1.5, markersize=4, label=a)
+                      for a in animal_ids]
+    axes[0, -1].legend(handles=animal_handles, fontsize=6, loc='upper right')
+
+    plt.tight_layout()
+    if output_path:
+        fig.savefig(output_path, dpi=150, bbox_inches='tight')
+    return fig
+
+
 # ── Statistical figures ───────────────────────────────────────
 
 def plot_layer_posthoc_pooled(pooled, raw_labels, layer_list, n_types,
@@ -798,7 +1096,8 @@ def plot_layer_posthoc_pooled(pooled, raw_labels, layer_list, n_types,
                 lm = al == layer
                 n  = int(np.sum(lm))
                 vals.append(np.mean(rl[lm] == t) * 100 if n > 0 else np.nan)
-            ax.scatter(xpos, vals, color=ANIMAL_COLORS.get(animal, 'black'),
+            ax.scatter(xpos, vals, color='black',
+                       marker=ANIMAL_MARKERS.get(animal, 'o'),
                        s=60, zorder=3, clip_on=False)
 
         # Pairwise Mann-Whitney U + Bonferroni on pooled data
@@ -1070,8 +1369,8 @@ def plot_experience_summary_heatmap(exp_results, type_names, layer_list,
             y = y_offset
 
             for animal, slope in zip(animals, slopes):
-                ax.scatter(slope, y,
-                           color=ANIMAL_COLORS.get(animal, 'gray'),
+                ax.scatter(slope, y, color='black',
+                           marker=ANIMAL_MARKERS.get(animal, 'o'),
                            s=40, zorder=3, clip_on=False)
             if not np.isnan(mean_s):
                 ax.plot([mean_s, mean_s], [y - 0.3, y + 0.3],
@@ -1088,8 +1387,10 @@ def plot_experience_summary_heatmap(exp_results, type_names, layer_list,
     ax.set_xlabel('Slope (%/day)')
     ax.grid(True, alpha=0.2, axis='x')
 
-    # Animal colour legend
-    animal_handles = [mpatches.Patch(color=ANIMAL_COLORS.get(a, 'gray'), label=a)
+    # Animal marker legend
+    animal_handles = [plt.Line2D([0], [0], color='black',
+                                  marker=ANIMAL_MARKERS.get(a, 'o'),
+                                  linestyle='None', markersize=6, label=a)
                       for a in animal_ids]
     ax.legend(handles=animal_handles, fontsize=6, loc='lower right')
 
@@ -1393,8 +1694,8 @@ def plot_layer_posthoc_per_day(pooled, raw_labels, per_session_results,
                     lm = al == layer
                     n  = int(np.sum(lm))
                     vals.append(np.mean(rl[lm] == t) * 100 if n > 0 else np.nan)
-                ax.scatter(xpos, vals,
-                           color=ANIMAL_COLORS.get(animal, 'black'),
+                ax.scatter(xpos, vals, color='black',
+                           marker=ANIMAL_MARKERS.get(animal, 'o'),
                            s=50, zorder=3, clip_on=False)
 
             # Pairwise chi-squared + Bonferroni on pooled cells this day
@@ -1494,13 +1795,13 @@ def plot_layer_posthoc_grand_summary(pooled, raw_labels, per_session_results,
             ax.plot(range(len(days_arr)), props, 'o-', color=lcolor,
                     linewidth=2, markersize=5, label=layer)
 
-        # Mark days where layer effect is significant (cell-level)
-        for di, day in enumerate(days_arr):
-            p = per_session_results.get(tname, {}).get(day, {}).get('p_cell', np.nan)
-            if not np.isnan(p) and p < 0.05:
-                ax.text(di, ax.get_ylim()[0], _sig_stars(p),
-                        ha='center', va='bottom', fontsize=9,
-                        color='black', fontweight='bold')
+        # # Mark days where layer effect is significant (cell-level)
+        # for di, day in enumerate(days_arr):
+        #     p = per_session_results.get(tname, {}).get(day, {}).get('p_cell', np.nan)
+        #     if not np.isnan(p) and p < 0.05:
+        #         ax.text(di, ax.get_ylim()[0], _sig_stars(p),
+        #                 ha='center', va='bottom', fontsize=9,
+        #                 color='black', fontweight='bold')
 
         ax.set_xticks(range(len(days_arr)))
         ax.set_xticklabels(day_labels, rotation=45, ha='right', fontsize=8)
@@ -1645,6 +1946,293 @@ def plot_experience_pooled_regression(exp_pooled_results, type_names, type_color
     return fig
 
 
+# ── Layer × session interaction on pooled cells ───────────────────────────────
+
+def run_layer_session_interaction(pooled, raw_labels, layer_list, type_names):
+    """
+    For each cluster × layer: KW test across all sessions (pooled cells),
+    then Bonferroni-corrected pairwise Mann-Whitney U between every pair of days.
+
+    Returns
+    -------
+    results : dict  {tname: {layer: {
+        'kw_p':     float,
+        'kw_H':     float,
+        'n_days':   int,
+        'posthoc':  dict { (day_a, day_b): {'p_raw', 'p_bonf', 'n_a', 'n_b'} }
+    }}}
+    """
+    from scipy.stats import kruskal, mannwhitneyu
+
+    # Collect all unique day numbers
+    all_days = sorted({int(s.replace('Day', ''))
+                       for a in pooled['animal_ids']
+                       for s in pooled['animal_data'][a]['session_order']})
+
+    print("\n── Layer × session interaction (KW + Bonferroni MW-U, pooled cells) ──")
+    results = {}
+
+    for t, tname in enumerate(type_names):
+        results[tname] = {}
+        print(f"\n  {tname}:")
+
+        for layer in layer_list:
+            lmask = pooled['layer_labels'] == layer
+
+            # Build per-day binary membership arrays (1 = in cluster t)
+            day_groups = {}
+            for day in all_days:
+                dmask = pooled['session_labels'] == f'Day{day}'
+                mask  = lmask & dmask
+                if np.sum(mask) < 2:
+                    continue
+                day_groups[day] = (raw_labels[mask] == t).astype(float)
+
+            if len(day_groups) < 2:
+                results[tname][layer] = {'kw_p': np.nan, 'kw_H': np.nan,
+                                         'n_days': 0, 'posthoc': {}}
+                continue
+
+            days_present = sorted(day_groups)
+            groups       = [day_groups[d] for d in days_present]
+
+            # KW omnibus
+            try:
+                H, kw_p = kruskal(*groups)
+            except Exception:
+                H, kw_p = np.nan, np.nan
+
+            # Pairwise MW-U with Bonferroni correction
+            pairs = [(days_present[i], days_present[j])
+                     for i in range(len(days_present))
+                     for j in range(i + 1, len(days_present))]
+            n_pairs  = len(pairs)
+            posthoc  = {}
+            for da, db in pairs:
+                ga, gb = day_groups[da], day_groups[db]
+                try:
+                    _, p_raw = mannwhitneyu(ga, gb, alternative='two-sided')
+                except Exception:
+                    p_raw = np.nan
+                posthoc[(da, db)] = {
+                    'p_raw':  p_raw,
+                    'p_bonf': min(p_raw * n_pairs, 1.0) if not np.isnan(p_raw) else np.nan,
+                    'n_a':    len(ga),
+                    'n_b':    len(gb),
+                }
+
+            results[tname][layer] = {
+                'kw_p':    kw_p,
+                'kw_H':    H,
+                'n_days':  len(days_present),
+                'posthoc': posthoc,
+            }
+            sig = _sig_stars(kw_p)
+            print(f"    {layer}: KW H={H:.2f}  p={kw_p:.4f}  {sig}  "
+                  f"(n_days={len(days_present)})")
+
+    return results, all_days
+
+
+def plot_layer_session_interaction(results, pooled, raw_labels, all_days,
+                                   layer_list, type_names, type_colors,
+                                   output_path=None):
+    """
+    Grid: rows = clusters, columns = layers.
+    Each panel: mean proportion per day (line) with significant pairwise
+    day comparisons annotated as brackets above.
+    Background tinted by KW significance.
+    """
+    n_types  = len(type_names)
+    n_layers = len(layer_list)
+    x        = np.array(all_days)
+
+    fig, axes = plt.subplots(n_layers, n_types,
+                             figsize=(3.5* n_types, 4.5 * n_layers),
+                             sharey='col', sharex='col')
+    fig.suptitle('Cluster proportion across sessions per layer',
+                 fontweight='bold', y=1.01)
+
+    if n_layers == 1:
+        axes = axes[np.newaxis, :]
+    if n_types == 1:
+        axes = axes[:, np.newaxis]
+
+    for ti, (tname, tcolor) in enumerate(zip(type_names, type_colors)):
+        for li, layer in enumerate(layer_list):
+            ax   = axes[li, ti]
+            res  = results[tname].get(layer, {})
+            kw_p = res.get('kw_p', np.nan)
+
+            # # Tint background if KW significant
+            # if not np.isnan(kw_p) and kw_p < 0.05:
+            #     ax.set_facecolor('#fff8e1' if kw_p < 0.01 else '#fffde7')
+
+            # Per-animal proportion per day — one point per animal per day
+            lmask      = pooled['layer_labels'] == layer
+            animal_ids = pooled['animal_ids']
+            day_means  = []
+
+            for day in all_days:
+                dmask = pooled['session_labels'] == f'Day{day}'
+                animal_props = []
+                for animal in animal_ids:
+                    amask = pooled['animal_labels'] == animal
+                    mask  = lmask & dmask & amask
+                    n     = int(np.sum(mask))
+                    if n == 0:
+                        continue
+                    animal_props.append(np.mean((raw_labels[mask] == ti).astype(float)) * 100)
+                    ax.scatter(day, animal_props[-1], color=tcolor, s=18,
+                               alpha=0.6, zorder=3, linewidths=0)
+                day_means.append(np.nanmean(animal_props) if animal_props else np.nan)
+
+            m     = np.array(day_means)
+            valid = ~np.isnan(m)
+            ax.plot(x[valid], m[valid], '-', color=tcolor, linewidth=2, zorder=2)
+
+            if li == 0:
+                ax.set_title(tname, fontsize=15, color=tcolor, fontweight='bold')
+            if ti == 0:
+                ax.set_ylabel(f'{layer}\n% cells', fontsize=15)
+            if li == n_layers - 1:
+                ax.set_xlabel('Day', fontsize=15)
+            ax.set_xticks(x)
+            ax.tick_params(axis='both', labelsize=15)
+            ax.grid(True, alpha=0.2, axis='y')
+
+    plt.tight_layout(rect=[0, 0, 1, 0.97])
+    if output_path:
+        fig.savefig(output_path, dpi=150, bbox_inches='tight')
+        print(f"  Saved: {os.path.basename(output_path)}")
+    return fig
+
+
+# ── Cluster proportion by day (pooled cells, mean±std across animals) ─────────
+
+def compute_cluster_proportion_by_day(pooled, raw_labels, type_names):
+    """
+    For each cluster and each recording day, compute the proportion of cells
+    belonging to that cluster — separately per animal, then summarise as
+    mean ± std across animals.
+
+    Returns
+    -------
+    results : dict  {tname: {'days': array, 'mean': array, 'std': array,
+                              'per_animal': dict {animal: array}}}
+    all_days : sorted list of int day numbers
+    """
+    # Collect all unique day numbers across animals
+    day_set = set()
+    for animal in pooled['animal_ids']:
+        so = pooled['animal_data'][animal]['session_order']
+        for sess in so:
+            day_set.add(int(sess.replace('Day', '')))
+    all_days = sorted(day_set)
+
+    results = {}
+    for t, tname in enumerate(type_names):
+        per_animal = {}
+        for animal in pooled['animal_ids']:
+            amask = pooled['animal_labels'] == animal
+            sl    = pooled['session_labels'][amask]
+            rl    = raw_labels[amask]
+            so    = pooled['animal_data'][animal]['session_order']
+
+            animal_props = {}
+            for sess in so:
+                day  = int(sess.replace('Day', ''))
+                mask = sl == sess
+                n    = int(np.sum(mask))
+                if n == 0:
+                    continue
+                animal_props[day] = np.mean(rl[mask] == t) * 100
+            per_animal[animal] = animal_props
+
+        # Align across animals for each day
+        mean_arr = np.full(len(all_days), np.nan)
+        std_arr  = np.full(len(all_days), np.nan)
+        for di, day in enumerate(all_days):
+            vals = [per_animal[a][day] for a in pooled['animal_ids']
+                    if day in per_animal[a]]
+            if len(vals) >= 2:
+                mean_arr[di] = np.mean(vals)
+                std_arr[di]  = np.std(vals, ddof=1)
+            elif len(vals) == 1:
+                mean_arr[di] = vals[0]
+                std_arr[di]  = 0.0
+
+        results[tname] = {
+            'days':       np.array(all_days),
+            'mean':       mean_arr,
+            'std':        std_arr,
+            'per_animal': per_animal,
+        }
+
+    return results, all_days
+
+
+def plot_cluster_proportion_by_day(prop_results, all_days, type_names, type_colors,
+                                   output_path=None):
+    """
+    Two panels:
+      Left  — one line per cluster, mean ± std (shaded) across animals over days
+      Right — same data normalised so all clusters sum to 100% per day (stacked area)
+    """
+    x = np.array(all_days)
+
+    fig, axes = plt.subplots(1, 2, figsize=(14, 5))
+    fig.suptitle('Cluster proportion across experience (pooled cells, mean ± SD across animals)',
+                 fontweight='bold')
+
+    # ── Left: mean ± std lines ────────────────────────────────
+    ax = axes[0]
+    for tname, tcolor in zip(type_names, type_colors):
+        d = prop_results[tname]
+        m = d['mean']
+        s = d['std']
+        valid = ~np.isnan(m)
+        ax.plot(x[valid], m[valid], 'o-', color=tcolor, label=tname, linewidth=2, markersize=5)
+        ax.fill_between(x[valid], (m - s)[valid], (m + s)[valid],
+                        color=tcolor, alpha=0.15)
+
+    ax.set_xlabel('Recording day')
+    ax.set_ylabel('% cells in cluster')
+    ax.set_title('Mean ± SD across animals')
+    ax.set_xticks(x)
+    ax.legend(fontsize=8, framealpha=0.9)
+    ax.grid(True, alpha=0.2, axis='y')
+
+    # ── Right: stacked area (normalised) ─────────────────────
+    ax2 = axes[1]
+    # Build matrix (n_types, n_days), fill NaN days with 0 for stacking
+    mat = np.vstack([prop_results[tn]['mean'] for tn in type_names])
+    mat_norm = np.where(np.isnan(mat), 0, mat)
+    totals   = mat_norm.sum(axis=0, keepdims=True)
+    totals   = np.where(totals == 0, 1, totals)
+    mat_pct  = mat_norm / totals * 100
+
+    bottom = np.zeros(len(x))
+    for ti, (tname, tcolor) in enumerate(zip(type_names, type_colors)):
+        ax2.fill_between(x, bottom, bottom + mat_pct[ti],
+                         color=tcolor, alpha=0.75, label=tname, step='mid')
+        bottom += mat_pct[ti]
+
+    ax2.set_xlabel('Recording day')
+    ax2.set_ylabel('% cells (normalised)')
+    ax2.set_title('Relative cluster composition per day')
+    ax2.set_xticks(x)
+    ax2.set_ylim(0, 100)
+    ax2.legend(fontsize=8, framealpha=0.9, loc='upper right')
+    ax2.grid(True, alpha=0.2, axis='y')
+
+    plt.tight_layout()
+    if output_path:
+        fig.savefig(output_path, dpi=150, bbox_inches='tight')
+        print(f"  Saved: {os.path.basename(output_path)}")
+    return fig
+
+
 # ── Save cluster labels back to each animal's HDF5 ────────────
 
 def save_labels_to_h5(pooled, raw_labels, type_names, pca, kmeans):
@@ -1739,14 +2327,14 @@ if __name__ == '__main__':
                        output_path=os.path.join(OUTPUT_DIR,
                                                 'pooled_mean_profiles.png'))
 
-    # ── 5b. Adaptation-like diagnostic ───────────────────────
-    print("\n=== 5b. Adaptation-like diagnostic ===")
-    plot_adaptation_cells_diagnostic(
-        profiles, bin_centers, landmark_positions,
-        raw_labels, type_names,
-        label='pooled', n_cells=50, cells_per_fig=10,
-        output_dir=OUTPUT_DIR
-    )
+    # # ── 5b. Adaptation-like diagnostic ───────────────────────
+    # print("\n=== 5b. Adaptation-like diagnostic ===")
+    # plot_adaptation_cells_diagnostic(
+    #     profiles, bin_centers, landmark_positions,
+    #     raw_labels, type_names,
+    #     label='pooled', n_cells=50, cells_per_fig=10,
+    #     output_dir=OUTPUT_DIR
+    # )
 
     # ── 6. Per-animal proportion figures ──────────────────────
     print("\n=== 6. Per-animal figures ===")
@@ -1774,6 +2362,8 @@ if __name__ == '__main__':
     layer_results = run_layer_effect_fisher(
         pooled, raw_labels, layer_list, n_types, type_names)
     exp_results   = run_experience_effect_fisher(
+        pooled, raw_labels, layer_list, type_names)
+    trend_results = run_session_trend_tests_fisher(
         pooled, raw_labels, layer_list, type_names)
 
     # Cell-level: tests on all pooled cells / pooled sessions
@@ -1826,6 +2416,26 @@ if __name__ == '__main__':
     plot_experience_pooled_regression(
         exp_cell_results, type_names, type_colors, layer_list,
         output_path=os.path.join(OUTPUT_DIR, 'experience_pooled_regression.png')
+    )
+
+    plot_session_trend_across_animals(
+        trend_results, pooled, layer_list, type_names, type_colors,
+        output_path=os.path.join(OUTPUT_DIR, 'session_trend_across_animals.png')
+    )
+
+    prop_by_day, all_days_pooled = compute_cluster_proportion_by_day(
+        pooled, raw_labels, type_names)
+    plot_cluster_proportion_by_day(
+        prop_by_day, all_days_pooled, type_names, type_colors,
+        output_path=os.path.join(OUTPUT_DIR, 'cluster_proportion_by_day.png')
+    )
+
+    layer_sess_results, all_days_int = run_layer_session_interaction(
+        pooled, raw_labels, layer_list, type_names)
+    plot_layer_session_interaction(
+        layer_sess_results, pooled, raw_labels, all_days_int,
+        layer_list, type_names, type_colors,
+        output_path=os.path.join(OUTPUT_DIR, 'layer_session_interaction.png')
     )
 
     # ── 10. Save labels to each animal's HDF5 ─────────────────

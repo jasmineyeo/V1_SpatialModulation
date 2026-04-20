@@ -34,7 +34,8 @@ import scipy.stats as stats
 from load_tracked import (
     load_tracking, filter_to_analysis_days, find_smi_files, find_preproc_files,
     find_files_from_tracking, assign_layers_from_smi, load_smi_session,
-    load_preproc_session, build_matrix, parse_day_numbers, layer_mean_sem,
+    load_preproc_session, build_matrix, build_reliability_mask,
+    parse_day_numbers, layer_mean_sem,
     animal_id_from_path, LAYER_ORDER, LAYER_COLORS, report_found_files,
 )
 
@@ -42,14 +43,25 @@ from load_tracked import (
 # CONFIGURATION
 # ============================================================
 
-ROI_TRACKING_FILE = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\TrackedROIs\roi_tracking_results.h5"
-ANIMAL_DIR        = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging"
+ROI_TRACKING_FILE = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\TrackedROIs\roi_tracking_results.h5"
+ANIMAL_DIR        = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging"
 REFERENCE_DAY     = "Day2"
-ANALYSIS_DAYS     = ['Day1','Day2','Day3', 'Day4','Day5']     # e.g. ['Day2','Day3','Day4','Day5','Day6','Day7']
+ANALYSIS_DAYS     = ['Day2','Day3','Day4', 'Day5','Day6', 'Day7']     # e.g. ['Day2','Day3','Day4','Day5','Day6','Day7']
                              # None = use all tracked sessions
 OUTPUT_DIR = os.path.join(ANIMAL_DIR, "TrackedROIs")
 if not os.path.exists(OUTPUT_DIR):
     os.makedirs(OUTPUT_DIR)
+
+# Cell selection
+# 'reliable_cells'       — basic reliability from preproc
+# 'combined_reliable'    — stricter: CC, Cohen's d, pattern correlation
+# 'reliable_valid_cells' — combined_reliable + valid SMI geometry (needs SMI h5)
+CELL_SELECTION = 'combined_reliable'
+
+# Fixed-pool tracking: if True, reliability is evaluated only on REFERENCE_DAY
+# and that fixed set is followed across all sessions.
+FIXED_POOL = True
+
 # ============================================================
 
 
@@ -343,6 +355,17 @@ def main():
     print("\n[4] Building avg_cc and Cohen's d matrices...")
     cc_matrix = build_matrix(tracked_matrix, day_labels, preproc_files, _extract_avg_cc)
     cd_matrix = build_matrix(tracked_matrix, day_labels, preproc_files, _extract_cohen_d)
+
+    if CELL_SELECTION is not None:
+        ref_day = REFERENCE_DAY if FIXED_POOL else None
+        rel_mask = build_reliability_mask(tracked_matrix, day_labels, preproc_files,
+                                          cell_selection=CELL_SELECTION,
+                                          smi_files=smi_files,
+                                          reference_day=ref_day)
+        cc_matrix[~rel_mask] = np.nan
+        cd_matrix[~rel_mask] = np.nan
+        pool_str = f"fixed-pool ({REFERENCE_DAY})" if FIXED_POOL else "per-session"
+        print(f"  Applied {CELL_SELECTION} mask [{pool_str}]")
 
     n_valid_cc = np.sum(~np.isnan(cc_matrix), axis=0)
     for d, nv in zip(day_labels, n_valid_cc):
