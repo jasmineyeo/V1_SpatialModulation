@@ -3,6 +3,12 @@ matplotlib.use('Qt5Agg')  # Required for interactive inspection
 
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import rcParams
+rcParams['legend.fontsize'] = 20
+rcParams['axes.labelsize'] = 20
+rcParams['axes.titlesize'] = 25
+rcParams['xtick.labelsize'] = 20
+rcParams['ytick.labelsize'] = 20
 from pathlib import Path
 import re
 import os

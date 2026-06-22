@@ -184,10 +184,27 @@ class dataLoader:
         twop_relativeT = np.array([t.total_seconds() for t in twop_relativeT])
         twoP_data['RelativeT'] = twop_relativeT
 
-        # Interpolate the location at twoP_data['RelativeT'] from new_VR_data['location'] at new_VR_data['RelativeT']
-        interpolated_location = np.interp(twoP_data['RelativeT'], 
-                                        new_VR_data['RelativeT'], 
-                                        new_VR_data['location'])
+        # Compute the actual time offset between the two clocks.
+        # VR_absolute_t[0] is the absolute time of the 's' event (session start in VR).
+        # twoP_data['AbsoluteT'][0] is the absolute time of the first 2p frame.
+        # Typically 2p starts first (Prairie View trigger) and VR 's' fires a few seconds later,
+        # so vr_start_offset_s is positive (VR lags behind 2p).
+        #
+        # PREVIOUS BUG: both RelativeT arrays started at 0, so interp assumed simultaneous
+        # start. That forced a negative optimal temporal offset in the spike aligner to
+        # compensate (e.g. -13 frames ≈ 1.3 s lag at 10 Hz).
+        vr_start_offset_s = (VR_absolute_t[0] - twoP_data['AbsoluteT'][0]).total_seconds()
+        print(f"VR 's' event offset from 2p start: {vr_start_offset_s:.3f} s")
+
+        # Express 2p frame times relative to VR start so that interp uses a common reference.
+        twop_t_in_vr_frame = twop_relativeT - vr_start_offset_s
+
+        # Interpolate; clamp extrapolation to the first/last known VR position.
+        interpolated_location = np.interp(twop_t_in_vr_frame,
+                                          new_VR_data['RelativeT'],
+                                          new_VR_data['location'],
+                                          left=new_VR_data['location'][0],
+                                          right=new_VR_data['location'][-1])
         new_VR_data['interp_location'] = interpolated_location
         print(f"size of interpolated_location is {interpolated_location.shape}")
         print(f"size of new_VR_data['location'] is {new_VR_data['location'].shape}")

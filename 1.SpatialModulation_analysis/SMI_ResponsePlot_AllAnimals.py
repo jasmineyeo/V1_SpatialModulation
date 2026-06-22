@@ -27,6 +27,12 @@ import numpy as np
 import matplotlib.pyplot as plt
 import matplotlib.gridspec as gridspec
 import matplotlib.colors as mcolors
+from matplotlib import rcParams
+rcParams['legend.fontsize'] = 20
+rcParams['axes.labelsize'] = 20
+rcParams['axes.titlesize'] = 25
+rcParams['xtick.labelsize'] = 20
+rcParams['ytick.labelsize'] = 20
 import h5py
 
 # Parula colormap (MATLAB-compatible, perceptually uniform blue→cyan→green→yellow)
@@ -58,7 +64,7 @@ TRIAL_BIN_SIZE = 10   # laps per trial-bin for within-session plots
 #           (valid_cells AND reliable_cells, then intersected with layer)
 #   True  → use combined_reliable from *_preproc*.h5
 #           (lap-to-lap reliability only, intersected with layer cell_indices)
-USE_COMBINED_RELIABLE = False
+USE_COMBINED_RELIABLE = True
 
 ANIMAL_DIRS = {
     'JSY040': r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging',
@@ -851,7 +857,7 @@ def plot_per_day_trialbins_across_animals(by_session_tb, save_dir,
 # ============================================================================
 
 def run_all(skip_existing=False):
-    summary_dir = r'D:\V1_SpatialModulation\2p\V1_prism\response_plots_wtO4144'
+    summary_dir = r'D:\V1_SpatialModulation\2p\V1_prism\response_plots_wtO4144_combined_reliable'
     os.makedirs(summary_dir, exist_ok=True)
 
     print('\n' + '=' * 80)

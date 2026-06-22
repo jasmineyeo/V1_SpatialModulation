@@ -22,6 +22,12 @@ import scipy.stats
 import matplotlib
 matplotlib.use('Agg')          # non-interactive backend for batch
 import matplotlib.pyplot as plt
+from matplotlib import rcParams
+rcParams['legend.fontsize'] = 20
+rcParams['axes.labelsize'] = 20
+rcParams['axes.titlesize'] = 25
+rcParams['xtick.labelsize'] = 20
+rcParams['ytick.labelsize'] = 20
 from collections import defaultdict
 
 sys.path.insert(0, r"C:\Users\jasmineyeo\Documents\GitHub\V1_SpatialModulation")

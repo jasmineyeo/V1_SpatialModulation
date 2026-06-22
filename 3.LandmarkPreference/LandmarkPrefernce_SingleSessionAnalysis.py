@@ -14,6 +14,12 @@ sys.path.insert(0, r"C:\Users\jasmineyeo\Documents\GitHub\V1_SpatialModulation")
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import rcParams
+rcParams['legend.fontsize'] = 20
+rcParams['axes.labelsize'] = 20
+rcParams['axes.titlesize'] = 25
+rcParams['xtick.labelsize'] = 20
+rcParams['ytick.labelsize'] = 20
 import seaborn as sns
 from scipy import stats
 from scipy.ndimage import gaussian_filter1d
@@ -449,48 +455,50 @@ def plot_landmark_assignment_summary(landmark_results, bin_centers,
         ax1.axvline(lm_min, color='gray', linestyle=':', linewidth=1, alpha=0.5)
         ax1.axvline(lm_max, color='gray', linestyle=':', linewidth=1, alpha=0.5)
     
-    ax1.set_xlabel('Peak Position (cm)', fontsize=11)
-    ax1.set_ylabel('Number of Cells', fontsize=11)
-    ax1.set_title('Distribution of Peak Positions by Landmark Assignment', fontsize=12, fontweight='bold')
-    ax1.legend(loc='upper right')
+    ax1.set_xlabel('Peak Position (cm)', fontsize=20)
+    ax1.set_ylabel('Number of Cells', fontsize=20)
+    ax1.set_title('Distribution of Peak Positions by Landmark Assignment', fontsize=25, fontweight='bold')
+    ax1.legend(loc='upper left', fontsize=10)
+    ax1.tick_params(labelsize=18)
     ax1.set_xlim(0, np.max(bin_centers))
-    
+
     # =========================================================================
     # Panel 2: Box plot of peak positions for each landmark
     # =========================================================================
     ax2 = axes[1]
-    
+
     peak_data = []
     labels = []
-    
+
     for lm_idx in range(n_landmarks):
         lm_cell_mask = valid_cells & (preferred_landmark == lm_idx)
         lm_peaks = peak_positions[lm_cell_mask]
-        
+
         if len(lm_peaks) > 0:
             peak_data.append(lm_peaks)
             labels.append(f'L{lm_idx+1}\n({landmark_positions[lm_idx]}cm)')
-    
+
     if len(peak_data) > 0:
         bp = ax2.boxplot(peak_data, labels=labels, patch_artist=True)
-        
+
         # Color the boxes
         for patch, color in zip(bp['boxes'], colors[:len(peak_data)]):
             patch.set_facecolor(color)
             patch.set_alpha(0.5)
-        
+
         # Add landmark position reference lines
         for lm_idx, lm_pos in enumerate(landmark_positions):
             ax2.axhline(lm_pos, color=colors[lm_idx], linestyle='--', linewidth=1.5, alpha=0.6)
-        
+
         # Add window boundaries
         for lm_idx, (lm_min, lm_max) in enumerate(landmark_windows):
             ax2.axhspan(lm_min, lm_max, alpha=0.1, color=colors[lm_idx])
-    
-    ax2.set_ylabel('Peak Position (cm)', fontsize=11)
-    ax2.set_xlabel('Assigned Landmark', fontsize=11)
-    ax2.set_title('Peak Position Distribution by Landmark (boxes show window boundaries)', 
-                 fontsize=12, fontweight='bold')
+
+    ax2.set_ylabel('Peak Position (cm)', fontsize=20)
+    ax2.set_xlabel('Assigned Landmark', fontsize=20)
+    ax2.tick_params(labelsize=18)
+    ax2.set_title('Peak Position Distribution by Landmark (boxes show window boundaries)',
+                  fontsize=25, fontweight='bold')
     
     plt.tight_layout()
     
@@ -1136,8 +1144,8 @@ def plot_example_cells_by_landmark(normalized_spatial_activity, bin_centers,
             
             if len(cells_pref_lm) == 0:
                 ax.text(0.5, 0.5, 'No cells', ha='center', va='center',
-                       transform=ax.transAxes, fontsize=12)
-                ax.set_title(f'{layer_name} - L{lm_idx+1}')
+                        transform=ax.transAxes, fontsize=20, color='gray')
+                ax.set_title(f'{layer_name} - L{lm_idx+1}', fontsize=25, fontweight='bold')
                 continue
             
             # Select top n_examples by response strength
@@ -1154,13 +1162,15 @@ def plot_example_cells_by_landmark(normalized_spatial_activity, bin_centers,
             ax.axvspan(lm_min, lm_max, alpha=0.2, color='red', label='Landmark window')
             ax.axvline(landmark_positions[lm_idx], color='red', linestyle='--', linewidth=2)
             
-            ax.set_title(f'{layer_name} - Landmark {lm_idx+1} ({landmark_positions[lm_idx]:.0f}cm)')
-            ax.set_xlabel('Position (cm)')
-            ax.set_ylabel('Normalized Activity')
+            ax.set_title(f'{layer_name} - Landmark {lm_idx+1}',
+                         fontsize=20, fontweight='bold')
+            ax.set_xlabel('Position (cm)', fontsize=20)
+            ax.set_ylabel('Normalized Activity', fontsize=20)
+            ax.tick_params(labelsize=18)
             ax.grid(True, alpha=0.3)
-            
+
             if row_idx == 0 and lm_idx == 0:
-                ax.legend()
+                ax.legend(fontsize=16)
     
     plt.tight_layout()
     
@@ -1363,21 +1373,21 @@ if __name__ == "__main__":
     
     # EXAMPLE: Load your data
     
-    data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251030_JSY_JSY054_SpMod_Day1\TSeries-10302025-1512-001"
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251030_JSY_JSY054_SpMod_Day1\TSeries-10302025-1512-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251031_JSY_JSY054_SpMod_Day2\TSeries-10312025-1751-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251101_JSY_JSY054_SpMod_Day3\TSeries-11012025-1725-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251102_JSY_JSY054_SpMod_Day4\TSeries-11022025-1642-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251103_JSY_JSY054_SpMod_Day5\TSeries-11032025-1715-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251104_JSY_JSY054_SpMod_Day6\TSeries-11042025-1418-001"
-    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251105_JSY_JSY054_SpMod_Day7\TSeries-11052025-1512-001"
+    data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251105_JSY_JSY054_SpMod_Day7\TSeries-11052025-1512-001"
     
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251009_JSY_JSY052_SpatialModulation_Day1\TSeries-10092025-1542-002"
-    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251010_JSY_JSY052_SpatialModulation_Day2\TSeries-10102025-0916-001"
+    # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251010_JSY_JSY052_SpatialModulation_Day2\TSeries-10102025-0916-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251011_JSY_JSY052_SpatialModulation_Day3\TSeries-10112025-1441-002"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251013_JSY_JSY052_SpatialModulation_Day5\TSeries-10132025-1236-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251014_JSY_JSY052_SpatialModulation_Day6\TSeries-10142025-1647-003"
-    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251015_JSY_JSY052_SpatialModulation_Day7\TSeries-10152025-1103-001'
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251015_JSY_JSY052_SpatialModulation_Day7\TSeries-10152025-1103-001'
 
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1_togetherregistration\TSeries-09062025-1308-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1_togetherregistration\TSeries-09062025-1308-002"
@@ -1400,7 +1410,7 @@ if __name__ == "__main__":
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251103_JSY_JSY051_SpMod_Day3\TSeries-11032025-1715-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251104_JSY_JSY051_SpMod_Day4\TSeries-11042025-1418-001"
     # data_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251105_JSY_JSY051_SpMod_Day5\TSeries-11052025-1512-002"
-    
+    # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251107_JSY_JSY051_SpMO_OpenloopVR_stationary\TSeries-11072025-1032-001'
 
     # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250616_JSY_JSY041_SpatialModulation_Day1_V1Prism\TSeries-06162025-1521-001'
     # data_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250618_JSY_JSY041_SpatialModulation_Day3_V1Prism\TSeries-06182025-1641-001'
@@ -1446,7 +1456,9 @@ if __name__ == "__main__":
     
     # Extract date (6 digits at the start) and session ID (DayX), Pattern: YYMMDD_JSY_JSYXXX_SpMod_DayX
     match = re.match(r'(\d{6})_.*_(Day\d+)', session_folder)
-    
+    if match is None:
+        match = re.match(r'(\d{6})_.*_(SpMO_OpenloopVR_(stationary|moving))', session_folder)
+        
     date_str = match.group(1)
     session_id = match.group(2)
 
@@ -1456,6 +1468,10 @@ if __name__ == "__main__":
     # L3 (85cm): full asymmetric  
     # L4 (115cm): constrained after (close to corridor end)
     landmark_windows_config = [
+    #     {'before': 25, 'after': 0},  # L1 at 25cm: [10, 35]
+    #     {'before': 25, 'after': 0},  # L2 at 55cm: [35, 65]
+    #     {'before': 25, 'after': 0},  # L3 at 85cm: [65, 95]
+    #     {'before': 25, 'after': 0},  # L4 at 115cm: [95, 125]
         {'before': 15, 'after': 10},  # L1 at 25cm: [10, 35]
         {'before': 20, 'after': 10},  # L2 at 55cm: [35, 65]
         {'before': 20, 'after': 10},  # L3 at 85cm: [65, 95]
@@ -1468,7 +1484,9 @@ if __name__ == "__main__":
         bin_centers=bin_centers,
         layer_cells=layer_cells,
         reliable_valid_cells=reliable_valid_cells,
-        landmark_positions=[25, 55, 85, 115],
+        # landmark_positions=[37, 65, 93, 120],
+
+        landmark_positions=[25, 55, 85, 120],
         landmark_windows_config=landmark_windows_config,  # NEW
         landmark_window=10.0,  # fallback (not used if config provided)
         boundary_exclusion=(5, 5),

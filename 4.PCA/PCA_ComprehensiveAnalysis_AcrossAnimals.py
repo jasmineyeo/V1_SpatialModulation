@@ -38,6 +38,12 @@ import numpy as np
 import h5py
 import matplotlib.pyplot as plt
 import matplotlib.patches as mpatches
+from matplotlib import rcParams
+rcParams['legend.fontsize'] = 20
+rcParams['axes.labelsize'] = 20
+rcParams['axes.titlesize'] = 25
+rcParams['xtick.labelsize'] = 20
+rcParams['ytick.labelsize'] = 20
 from scipy.stats import (chi2_contingency, kruskal, mannwhitneyu,
                          linregress, combine_pvalues)
 from sklearn.decomposition import PCA

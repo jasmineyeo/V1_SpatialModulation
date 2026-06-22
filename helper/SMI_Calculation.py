@@ -1,6 +1,12 @@
 import os
 import numpy as np
 import matplotlib.pyplot as plt
+from matplotlib import rcParams
+rcParams['legend.fontsize'] = 20
+rcParams['axes.labelsize'] = 20
+rcParams['axes.titlesize'] = 25
+rcParams['xtick.labelsize'] = 20
+rcParams['ytick.labelsize'] = 20
 from scipy.optimize import curve_fit
 from tqdm import tqdm
 from scipy.ndimage import gaussian_filter1d
@@ -497,113 +503,78 @@ def plot_SMI_results_improved(results, bin_centers, reliable_cells=None, avg_cc=
     print(f"Non-modulated (±0.05): {non_mod} ({non_mod/n_valid*100:.1f}%)")
     print(f"Negative modulation (<-0.05): {negative} ({negative/n_valid*100:.1f}%)")
     
-    # Plot example cells
+    # Plot all valid cells, sorted by |SMI| descending
     sorted_indices = plot_indices[np.argsort(np.abs(valid_SMI))[::-1]]
-    n_examples = min(max_examples, n_valid)
     fig_examples = []
-    
-    for i in range(n_examples):
+
+    for i in range(n_valid):
         cell_idx = sorted_indices[i]
         smi = SMI_values[cell_idx]
         pref_pos = preferred_positions[cell_idx]
         nonpref_pos = non_preferred_positions[cell_idx]
         
-        fig = plt.figure(figsize=(15, 5))
-        
-        # Main plot with all information
-        plt.subplot(1, 3, 1)
-        plt.plot(bin_centers, training_profiles[cell_idx], 'b-', alpha=0.7, 
+        fig = plt.figure(figsize=(14, 6))
+
+        # Subplot 1: Raw response
+        plt.subplot(1, 2, 1)
+        plt.plot(bin_centers, training_profiles[cell_idx], 'b-', alpha=0.7,
                 label='Training Trials', linewidth=1.5)
-        plt.plot(bin_centers, testing_profiles[cell_idx], 'r-', alpha=0.7, 
+        plt.plot(bin_centers, testing_profiles[cell_idx], 'r-', alpha=0.7,
                 label='Testing Trials', linewidth=1.5)
-        
-        # Add fitted curves if available
-        if fitting_success[cell_idx, 0]:
-            plt.plot(bin_centers, preferred_fitted_curves[cell_idx], 'g--', 
-                    linewidth=2, label='Preferred Fit')
-        
-        if fitting_success[cell_idx, 1]:
-            plt.plot(bin_centers, non_preferred_fitted_curves[cell_idx], 'm--', 
-                    linewidth=2, label='Non-Preferred Fit')
-        
+
         # Mark preferred and chosen non-preferred positions
-        plt.axvline(pref_pos, color='green', linestyle='-', alpha=0.8, 
+        plt.axvline(pref_pos, color='green', linestyle='-', alpha=0.8,
                    label=f'Preferred ({pref_pos:.1f}cm)')
-        plt.axvline(nonpref_pos, color='purple', linestyle='-', alpha=0.8, 
+        plt.axvline(nonpref_pos, color='purple', linestyle='-', alpha=0.8,
                    label=f'Non-Preferred ({nonpref_pos:.1f}cm)')
-        
+
         # Show all candidate non-preferred positions
         cell_candidates = non_preferred_candidates[cell_idx]
         chosen_idx = chosen_candidate_idx[cell_idx]
-        
+
         for j, (pos, resp) in enumerate(cell_candidates):
             if resp > 0:  # Valid candidate
                 if j == chosen_idx:
                     continue  # Skip the chosen one (already marked above)
-                plt.axvline(pos, color='purple', linestyle=':', alpha=0.5, 
+                plt.axvline(pos, color='purple', linestyle=':', alpha=0.5,
                            label=f'Alt. ({distance_multipliers[j]:+d}×{segment_distance:.0f}cm)' if j < 2 else '_nolegend_')
-        
-        # Highlight excluded boundary regions
-        plt.axvspan(bin_centers[0], min_allowed, color='red', alpha=0.1, label='Excluded')
-        plt.axvspan(max_allowed, bin_centers[-1], color='red', alpha=0.1, label='_nolegend_')
-        
+
+        # Highlight first and last 10cm as excluded regions
+        plt.axvspan(bin_centers[0], bin_centers[0] + 10, color='red', alpha=0.2, label='Excluded (10cm)')
+        plt.axvspan(bin_centers[-1] - 10, bin_centers[-1], color='red', alpha=0.2, label='_nolegend_')
+
         plt.xlabel('Position (cm)')
         plt.ylabel('Activity')
         plt.title(f'Cell {cell_idx} - SMI: {smi:.3f}')
-        plt.legend(loc='upper right', fontsize='small')
         plt.grid(True, alpha=0.3)
-        
-        # Zoomed view of preferred position
-        plt.subplot(1, 3, 2)
-        pref_idx = np.argmin(np.abs(bin_centers - pref_pos))
-        zoom_start = max(0, pref_idx - 15)
-        zoom_end = min(len(bin_centers), pref_idx + 15)
-        
-        plt.plot(bin_centers[zoom_start:zoom_end], 
-                training_profiles[cell_idx, zoom_start:zoom_end], 
-                'b-', alpha=0.7, label='Training')
-        plt.plot(bin_centers[zoom_start:zoom_end], 
-                testing_profiles[cell_idx, zoom_start:zoom_end], 
-                'r-', alpha=0.7, label='Testing')
-        
-        if fitting_success[cell_idx, 0]:
-            plt.plot(bin_centers[zoom_start:zoom_end], 
-                    preferred_fitted_curves[cell_idx, zoom_start:zoom_end], 
-                    'g--', linewidth=2, label='Fit')
-        
-        plt.axvline(pref_pos, color='green', linestyle='-', alpha=0.8)
-        plt.title('Preferred Position (Zoomed)')
-        plt.xlabel('Position (cm)')
-        plt.ylabel('Activity')
-        plt.legend()
-        plt.grid(True, alpha=0.3)
-        
-        # Response comparison
-        plt.subplot(1, 3, 3)
+
+        # Subplot 2: Response comparison
+        plt.subplot(1, 2, 2)
         positions = ['Preferred', 'Non-Preferred']
         values = [results['Rp'][cell_idx], results['Rn'][cell_idx]]
         colors = ['green', 'purple']
-        
+
         bars = plt.bar(positions, values, color=colors, alpha=0.7)
-        plt.title(f'Response Comparison\nSMI = {smi:.3f}')
+        plt.title('Response Comparison')
         plt.ylabel('Response')
         plt.grid(True, alpha=0.3)
-        
+
         # Add value labels on bars
         for bar, val in zip(bars, values):
-            plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01, 
+            plt.text(bar.get_x() + bar.get_width()/2, bar.get_height() + 0.01,
                     f'{val:.3f}', ha='center', va='bottom')
-        
+
         # Add additional info as text
-        info_text = f'Distance: {abs(nonpref_pos - pref_pos):.1f}cm'
+        info_text = ''
         if avg_cc is not None:
-            info_text += f'\nAvg CC: {avg_cc[cell_idx]:.3f}'
+            info_text += f'Avg CC: {avg_cc[cell_idx]:.3f}'
         if cohens_d is not None:
             info_text += f'\nCohen\'s d: {cohens_d[cell_idx]:.3f}'
-        
-        plt.text(0.02, 0.98, info_text, transform=plt.gca().transAxes, 
-                verticalalignment='top', fontsize=10,
-                bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+        if info_text:
+            plt.text(0.02, 0.98, info_text, transform=plt.gca().transAxes,
+                    verticalalignment='top', fontsize=16,
+                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
         
         plt.tight_layout()
         if data_filepath is not None:

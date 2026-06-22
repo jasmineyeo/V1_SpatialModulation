@@ -153,19 +153,28 @@ def batch_landmark_analysis(skip_existing=True):
             med_coords = np.array([cell['med'] for cell in twop_dict['stat']])
             layer_cells, layer_boundaries = SMI_Layer.identify_layers(med_coords)
 
+
             landmark_windows_config = [
-                {'before': 15, 'after': 10},  # L1 at 25cm: [10, 35]
-                {'before': 20, 'after': 10},  # L2 at 55cm: [35, 65]
-                {'before': 20, 'after': 10},  # L3 at 85cm: [65, 95]
-                {'before': 20, 'after': 10},  # L4 at 115cm: [95, 125]
+                {'before': 25, 'after': 0},  # L1 at 25cm: [10, 35]
+                {'before': 25, 'after': 0},  # L2 at 55cm: [35, 65]
+                {'before': 25, 'after': 0},  # L3 at 85cm: [65, 95]
+                {'before': 25, 'after': 0},  # L4 at 115cm: [95, 125]
+                # {'before': 15, 'after': 10},  # L1 at 25cm: [10, 35]
+                # {'before': 20, 'after': 10},  # L2 at 55cm: [35, 65]
+                # {'before': 20, 'after': 10},  # L3 at 85cm: [65, 95]
+                # {'before': 20, 'after': 10},  # L4 at 115cm: [95, 125]
             ]
+
+
 
             results = run_landmark_analysis(
                 normalized_spatial_activity=normalized_spatial_activity,
                 bin_centers=bin_centers,
                 layer_cells=layer_cells,
                 reliable_valid_cells=reliable_valid_cells,
-                landmark_positions=[25, 55, 85, 115],
+                landmark_positions=[37, 65, 93, 120],
+
+                # landmark_positions=[25, 55, 85, 115],
                 landmark_windows_config=landmark_windows_config,
                 landmark_window=10.0,
                 boundary_exclusion=(5, 5),

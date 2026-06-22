@@ -19,6 +19,12 @@ import numpy as np
 import matplotlib
 matplotlib.use('Agg')          # non-interactive backend for batch
 import matplotlib.pyplot as plt
+from matplotlib import rcParams
+rcParams['legend.fontsize'] = 20
+rcParams['axes.labelsize'] = 20
+rcParams['axes.titlesize'] = 25
+rcParams['xtick.labelsize'] = 20
+rcParams['ytick.labelsize'] = 20
 from scipy import stats as sp_stats
 from scipy.ndimage import gaussian_filter1d
 from matplotlib.colors import LinearSegmentedColormap

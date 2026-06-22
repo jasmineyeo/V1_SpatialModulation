@@ -60,11 +60,11 @@ from helper.twop import TwoP
 
 from Preprocess import convert_stat_to_serializable, convert_ops_to_serializable
 
-rcParams['legend.fontsize'] = 14
-rcParams['axes.labelsize']  = 14
-rcParams['axes.titlesize']  = 20
-rcParams['xtick.labelsize'] = 14
-rcParams['ytick.labelsize'] = 14
+rcParams['legend.fontsize'] = 20
+rcParams['axes.labelsize']  = 20
+rcParams['axes.titlesize']  = 25
+rcParams['xtick.labelsize'] = 20
+rcParams['ytick.labelsize'] = 20
 
 
 # =============================================================================
@@ -342,6 +342,7 @@ def _offset_optimization_on_arrays(twop_dict_seg, vr_dict_seg, framerate,
         twop_dict_seg,
         vr_dict_seg,
         framerate,
+        offset_range=list(range(-10, 11)),
         twop_filepath=save_dir
     )
     return optimal_offset, results, best_offsets

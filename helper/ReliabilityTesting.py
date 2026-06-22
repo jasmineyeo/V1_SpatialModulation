@@ -2,9 +2,15 @@
 import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.gridspec import GridSpec
+from matplotlib.backends.backend_pdf import PdfPages
+from matplotlib import rcParams
+rcParams['legend.fontsize'] = 20
+rcParams['axes.labelsize'] = 20
+rcParams['axes.titlesize'] = 25
+rcParams['xtick.labelsize'] = 20
+rcParams['ytick.labelsize'] = 20
 from tqdm import tqdm
 import os
-from matplotlib.backends.backend_pdf import PdfPages
 
 def test_cell_reliability(spatial_activity, n_shuffles=1000, 
                          cc_percentile=95, cohen_threshold=0.5,
@@ -1300,156 +1306,109 @@ def plot_individual_reliable_cells_to_pdf(spatial_activity, reliable_cells, save
     
     # Create PDF
     with PdfPages(pdf_filepath) as pdf:
-        
-        # Process cells in batches per page
-        for batch_start in tqdm(range(0, n_reliable, cells_per_page), 
-                               desc="Creating PDF pages"):
+
+        for batch_start in tqdm(range(0, n_reliable, cells_per_page),
+                                desc="Creating PDF pages"):
             batch_end = min(batch_start + cells_per_page, n_reliable)
             batch_indices = reliable_indices[batch_start:batch_end]
-            
-            # Create figure for this page
-            fig = plt.figure(figsize=(16, 12), dpi=dpi)
-            
-            # Calculate subplot layout
             n_cells_this_page = len(batch_indices)
-            if n_cells_this_page == 1:
-                rows, cols = 1, 1
-            elif n_cells_this_page == 2:
-                rows, cols = 1, 2
-            elif n_cells_this_page <= 4:
-                rows, cols = 2, 2
-            else:
-                rows, cols = 3, 2  # For more than 4 cells
-            
+
+            # One row per cell, four columns: heatmap | mean±SEM | individual trials | stats
+            fig = plt.figure(figsize=(28, 8 * n_cells_this_page), dpi=dpi)
+            gs = GridSpec(n_cells_this_page, 4, figure=fig,
+                          hspace=0.75, wspace=0.45,
+                          top=0.92, bottom=0.06, left=0.06, right=0.97)
+
             try:
-                # Plot each cell in this batch
                 for i, cell_idx in enumerate(batch_indices):
-                    
-                    # Create subplot for this cell
-                    ax = plt.subplot(rows, cols, i + 1)
-                    
-                    # Get cell activity
+
                     cell_activity = spatial_activity[cell_idx].copy()
-                    
-                    # Normalize if requested
                     if normalize:
                         max_val = np.max(cell_activity)
                         min_val = np.min(cell_activity)
                         if max_val > min_val:
                             cell_activity = (cell_activity - min_val) / (max_val - min_val)
-                    
-                    # Calculate trial-averaged activity
+
                     trial_averaged = np.mean(cell_activity, axis=0)
-                    std_activity = np.std(cell_activity, axis=0)
-                    sem_activity = std_activity / np.sqrt(cell_activity.shape[0])
-                    
-                    # Create a mini-subplot layout for this cell
-                    gs_cell = GridSpec(2, 2, 
-                                     height_ratios=[1, 1], 
-                                     width_ratios=[2, 1],
-                                     hspace=0.3, wspace=0.3)
-                    
-                    # Clear the current subplot and create mini subplots
-                    ax.remove()
-                    
-                    # Calculate position for this cell's subplots
-                    cell_row = i // cols
-                    cell_col = i % cols
-                    
-                    # Define subplot positions
-                    left = cell_col / cols
-                    right = (cell_col + 1) / cols
-                    bottom = 1 - (cell_row + 1) / rows
-                    top = 1 - cell_row / rows
-                    
-                    # Create mini subplots
-                    width = (right - left) * 0.48
-                    height = (top - bottom) * 0.45
-                    
-                    # Heatmap (top left)
-                    ax1 = fig.add_axes([left + 0.02, bottom + height + 0.05, width, height])
-                    im = ax1.imshow(cell_activity, aspect='auto', cmap='viridis', 
-                                  interpolation='nearest', origin='lower')
-                    ax1.set_title(f'Cell {cell_idx} - All Trials', fontsize=10)
-                    ax1.set_xlabel(x_label, fontsize=8)
-                    ax1.set_ylabel('Trial', fontsize=8)
-                    ax1.tick_params(labelsize=8)
-                    
-                    # Mean activity (top right)
-                    ax2 = fig.add_axes([left + width + 0.04, bottom + height + 0.05, 
-                                       width * 0.8, height])
-                    ax2.plot(bin_centers, trial_averaged, 'b-', linewidth=2)
-                    ax2.fill_between(bin_centers, 
-                                   trial_averaged - sem_activity,
-                                   trial_averaged + sem_activity,
-                                   alpha=0.3, color='blue')
-                    ax2.set_title('Mean ± SEM', fontsize=10)
-                    ax2.set_xlabel(x_label, fontsize=8)
-                    ax2.set_ylabel('Activity', fontsize=8)
-                    ax2.tick_params(labelsize=8)
-                    ax2.grid(True, alpha=0.3)
-                    
-                    # Individual trials (bottom left)
-                    ax3 = fig.add_axes([left + 0.02, bottom + 0.02, width, height])
+                    sem_activity = np.std(cell_activity, axis=0) / np.sqrt(cell_activity.shape[0])
                     n_trials = cell_activity.shape[0]
+
+                    # --- Heatmap: all trials ---
+                    ax1 = fig.add_subplot(gs[i, 0])
+                    ax1.imshow(cell_activity, aspect='auto', cmap='viridis',
+                               interpolation='nearest', origin='lower')
+                    ax1.set_title(f'Cell {cell_idx} — All Trials', fontsize=25, fontweight='bold')
+                    ax1.set_xlabel(x_label, fontsize=20)
+                    ax1.set_ylabel('Trial', fontsize=20)
+                    ax1.tick_params(labelsize=18)
+
+                    # --- Mean ± SEM ---
+                    ax2 = fig.add_subplot(gs[i, 1])
+                    ax2.plot(bin_centers, trial_averaged, 'b-', linewidth=2)
+                    ax2.fill_between(bin_centers,
+                                     trial_averaged - sem_activity,
+                                     trial_averaged + sem_activity,
+                                     alpha=0.3, color='blue')
+                    ax2.set_title('Mean ± SEM', fontsize=25, fontweight='bold')
+                    ax2.set_xlabel(x_label, fontsize=20)
+                    ax2.set_ylabel('Activity', fontsize=20)
+                    ax2.tick_params(labelsize=18)
+                    ax2.grid(True, alpha=0.3)
+
+                    # --- Individual trials (up to 8 shown) ---
+                    ax3 = fig.add_subplot(gs[i, 2])
                     for trial in range(min(8, n_trials)):
-                        alpha = 0.4
-                        ax3.plot(bin_centers, cell_activity[trial], 
-                               alpha=alpha, linewidth=1, color='gray')
-                    ax3.plot(bin_centers, trial_averaged, 'r-', linewidth=2, 
-                           label=f'Mean (n={n_trials})')
-                    ax3.set_title('Individual Trials', fontsize=10)
-                    ax3.set_xlabel(x_label, fontsize=8)
-                    ax3.set_ylabel('Activity', fontsize=8)
-                    ax3.tick_params(labelsize=8)
+                        ax3.plot(bin_centers, cell_activity[trial],
+                                 alpha=0.4, linewidth=1, color='gray')
+                    ax3.plot(bin_centers, trial_averaged, 'r-', linewidth=2,
+                             label=f'Mean (n={n_trials})')
+                    ax3.set_title('Individual Trials', fontsize=25, fontweight='bold')
+                    ax3.set_xlabel(x_label, fontsize=20)
+                    ax3.set_ylabel('Activity', fontsize=20)
+                    ax3.tick_params(labelsize=18)
                     ax3.grid(True, alpha=0.3)
-                    
-                    # Statistics (bottom right)
-                    ax4 = fig.add_axes([left + width + 0.04, bottom + 0.02, 
-                                       width * 0.8, height])
+                    ax3.legend(fontsize=16)
+
+                    # --- Statistics panel ---
+                    ax4 = fig.add_subplot(gs[i, 3])
                     ax4.axis('off')
-                    
-                    # Prepare statistics text
                     stats_text = f"Cell {cell_idx}\n\n"
                     stats_text += f"Trials: {n_trials}\n"
                     stats_text += f"Peak: {np.max(trial_averaged):.3f}\n"
                     stats_text += f"Mean: {np.mean(trial_averaged):.3f}\n"
-                    
                     if avg_cc is not None:
                         stats_text += f"Avg CC: {avg_cc[cell_idx]:.3f}\n"
                     if cohen_d is not None:
                         stats_text += f"Cohen's D: {cohen_d[cell_idx]:.3f}\n"
-                    
                     peak_location = bin_centers[np.argmax(trial_averaged)]
-                    stats_text += f"Peak loc: {peak_location:.1f}\n"
-                    
-                    ax4.text(0.1, 0.9, stats_text, transform=ax4.transAxes, 
-                           fontsize=9, verticalalignment='top', fontfamily='monospace',
-                           bbox=dict(boxstyle='round,pad=0.3', facecolor='lightgray', alpha=0.8))
-                    
+                    stats_text += f"Peak loc: {peak_location:.1f} cm\n"
+                    ax4.text(0.05, 0.95, stats_text, transform=ax4.transAxes,
+                             fontsize=18, verticalalignment='top', fontfamily='monospace',
+                             bbox=dict(boxstyle='round,pad=0.5', facecolor='lightgray', alpha=0.8))
+
                     plotting_stats['successfully_plotted'] += 1
-                
-                # Add page title
-                page_title = f'Reliable Cells {reliable_indices[batch_start]}-{reliable_indices[batch_end-1]} '
-                page_title += f'(Page {batch_start//cells_per_page + 1} of {(n_reliable-1)//cells_per_page + 1})'
-                fig.suptitle(page_title, fontsize=16, fontweight='bold', y=0.98)
-                
-                # Save this page to PDF
+
+                total_pages = (n_reliable - 1) // cells_per_page + 1
+                page_num = batch_start // cells_per_page + 1
+                page_title = (f'Spatial Profiles — Page {page_num} of {total_pages}  '
+                              f'(cells {reliable_indices[batch_start]}–{reliable_indices[batch_end - 1]})')
+                fig.suptitle(page_title, fontsize=25, fontweight='bold')
+
                 pdf.savefig(fig, bbox_inches='tight', dpi=dpi)
                 plt.close(fig)
-                
+
             except Exception as e:
                 print(f"Failed to create page for cells {batch_start}-{batch_end-1}: {str(e)}")
                 plotting_stats['failed_plots'] += len(batch_indices)
                 plt.close(fig)
                 continue
-    
+
     # Print final summary
     print(f"\nReliable cell PDF plotting complete!")
     print(f"   Successfully plotted: {plotting_stats['successfully_plotted']} cells")
     print(f"   Failed plots: {plotting_stats['failed_plots']} cells")
     print(f"   PDF saved to: {pdf_filepath}")
-    
+
     return pdf_filepath, plotting_stats
 
 

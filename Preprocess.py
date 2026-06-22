@@ -23,12 +23,80 @@ from helper import dataLoader, files
 from helper import SpikeSmoothing, ReliabilityTesting as RT, SpatialDiscretization as SD, BehavioralDataFiltering as DF, ResponseVisualization as RV    
 from matplotlib import rcParams
 import matplotlib.pyplot as plt
+import matplotlib.colors as mcolors
 
-rcParams['legend.fontsize'] = 14
-rcParams['axes.labelsize'] = 14
-rcParams['axes.titlesize'] = 20
-rcParams['xtick.labelsize'] = 14
-rcParams['ytick.labelsize'] = 14
+rcParams['legend.fontsize'] = 20
+rcParams['axes.labelsize'] = 20
+rcParams['axes.titlesize'] = 25
+rcParams['xtick.labelsize'] = 20
+rcParams['ytick.labelsize'] = 20
+
+# Parula colormap (MATLAB-compatible, perceptually uniform blue→yellow)
+_PARULA_COLORS = [
+    (0.2422, 0.1504, 0.6603), (0.2108, 0.3706, 0.9717),
+    (0.0196, 0.5804, 0.8745), (0.0863, 0.6510, 0.7490),
+    (0.1961, 0.6980, 0.6039), (0.3647, 0.7412, 0.5176),
+    (0.6275, 0.7647, 0.3843), (0.8510, 0.7882, 0.1961),
+    (0.9686, 0.8235, 0.0667), (0.9765, 0.9843, 0.0510),
+]
+PARULA = mcolors.LinearSegmentedColormap.from_list('parula', _PARULA_COLORS)
+
+
+
+def create_heatmap_responseplot(normalized_activity, cell_mask, bin_centers, title, save_path):
+    """
+    Sorted tuning-curve heatmap matching SMI_ResponsePlot_AllAnimals style.
+    Mean over all laps, row-normalised 0–1, sorted by preferred position,
+    with a preferred-position colour strip on the right.
+    """
+    indices = np.where(cell_mask)[0]
+    n_cells = len(indices)
+    if n_cells == 0:
+        print(f"  No cells to plot for '{title}' — skipping heatmap.")
+        return
+
+    act = normalized_activity[indices]           # (n_cells, n_laps, n_bins)
+    mean_tuning = np.nanmean(act, axis=1)        # (n_cells, n_bins)
+
+    row_max = mean_tuning.max(axis=1, keepdims=True)
+    row_max[row_max == 0] = 1
+    tuning_norm = mean_tuning / row_max
+
+    preferred_positions = bin_centers[np.argmax(tuning_norm, axis=1)]
+    order = np.argsort(preferred_positions)
+    tuning_sorted = tuning_norm[order]
+    pp_sorted = preferred_positions[order]
+
+    pos_min, pos_max = bin_centers[0], bin_centers[-1]
+
+    fig, ax = plt.subplots(1, 1, figsize=(5, 8))
+    ax.imshow(tuning_sorted, aspect='auto', cmap=PARULA, vmin=0, vmax=1,
+              extent=[pos_min, pos_max, n_cells, 0], interpolation='nearest')
+
+    for lm in [37, 65, 93, 120]:
+        if pos_min <= lm <= pos_max:
+            ax.axvline(lm, color='white', linewidth=1.2, linestyle='--', alpha=0.8)
+
+    pp_norm = (pp_sorted - pos_min) / max(pos_max - pos_min, 1)
+    ax_s = ax.inset_axes([1.01, 0, 0.04, 1], transform=ax.transAxes)
+    ax_s.imshow(pp_norm[:, np.newaxis], aspect='auto', cmap='twilight', vmin=0, vmax=1,
+                extent=[0, 1, n_cells, 0], interpolation='nearest')
+    ax_s.set_xticks([])
+    ax_s.set_yticks([])
+
+    ax.set_xlim(pos_min, pos_max)
+    ax.set_xticks([30, 60, 90, 120])
+    ax.set_xticklabels(['30', '60', '90', '120'], fontsize=20)
+    ax.set_yticks([0, n_cells])
+    ax.set_yticklabels(['0', str(n_cells)], fontsize=20)
+    ax.set_xlabel('VR position (cm)', fontsize=20)
+    ax.set_ylabel('# cells', fontsize=20)
+    ax.set_title(title, fontsize=25, fontweight='bold')
+
+    fig.savefig(save_path, dpi=150, bbox_inches='tight')
+    plt.close(fig)
+    print(f"  Saved heatmap: {save_path}")
+
 
 def convert_stat_to_serializable(stat_data):
     """
@@ -150,18 +218,28 @@ def convert_ops_to_serializable(ops_data):
 
 def preprocess_2pVR(twop_filepath):
     
-    # Find a file that has "VRlog*.txt" in the twop_filepath directory
+    # Find VRlog file — case-insensitive, check TSeries folder then parent folder
     import glob
-    vrlog_pattern = os.path.join(twop_filepath, "VRlog*.txt")
-    vrlog_files = glob.glob(vrlog_pattern)
+    search_dirs = [twop_filepath, os.path.dirname(twop_filepath)]
+    vrlog_files = []
+    for d in search_dirs:
+        all_txt = glob.glob(os.path.join(d, "*.txt"))
+        vrlog_files = [f for f in all_txt if 'vrlog' in os.path.basename(f).lower()]
+        if vrlog_files:
+            break
 
     if len(vrlog_files) == 1:
         vr_filepath = vrlog_files[0]
         print(f"Found VRlog file: {vr_filepath}")
     elif len(vrlog_files) > 1:
-        # If multiple files found, use the first one (or could sort by date)
         vr_filepath = sorted(vrlog_files)[0]
         print(f"Warning: Found {len(vrlog_files)} VRlog files, using: {vr_filepath}")
+    else:
+        all_txt_in_folder = glob.glob(os.path.join(twop_filepath, "*.txt"))
+        raise FileNotFoundError(
+            f"No VRlog*.txt found in:\n  {twop_filepath}\n  {os.path.dirname(twop_filepath)}\n"
+            f".txt files in TSeries folder: {[os.path.basename(f) for f in all_txt_in_folder]}"
+        )
 
     # 1. Preprocess 2p data and treadmill behavior data (load and align)
     procData = dataLoader(twop_filepath, vr_filepath)
@@ -169,7 +247,7 @@ def preprocess_2pVR(twop_filepath):
     twop_dict, vr_dict = procData.align_data()
 
     # 2a. Find temporal offset, which yields the best alignment between 2p and behavior data
-    optimal_offset, _, _ = SpikeSmoothing.run_offset_optimization(twop_filepath, vr_filepath)
+    optimal_offset, _, _ = SpikeSmoothing.run_offset_optimization(twop_filepath, vr_filepath, list(range(-10, 11)))
     # optimal_offset = 5
     # Use the optimal offset in your main preprocessing
     offset_spike_data = SpikeSmoothing.apply_temporal_offset(twop_dict['sps'], optimal_offset)
@@ -187,7 +265,6 @@ def preprocess_2pVR(twop_filepath):
     min_trial_duration_seconds = 5
     max_trial_duration_seconds = 60
 
-    # FIXED: Returns speed_laps now!
     filtered_spks_laps, filtered_location_laps, filtered_speed_laps, n_valid_laps = \
         DF.process_data_with_speed_filtering(
             smoothed, 
@@ -226,7 +303,7 @@ def preprocess_2pVR(twop_filepath):
         n_shuffles = 200,
         cc_percentile=90,
         cohen_threshold=0.8,
-        min_cc_threshold=0.2,
+        min_cc_threshold=0.1,
         min_pattern_corr=0.3,
         peak_distance_threshold=5,
         use_activity_threshold=True,
@@ -300,23 +377,51 @@ def preprocess_2pVR(twop_filepath):
     os.makedirs(combinedreliablecell_save_directory, exist_ok=True)
     os.makedirs(reliablecell_save_directory, exist_ok=True)
     
-    pdf_path, stats = RT.plot_individual_reliable_cells_to_pdf(
-        spatial_activity=normalized_spatial_activity,
-        reliable_cells=combined_reliable,
-        save_directory=combinedreliablecell_save_directory,
-        avg_cc=avg_cc,
-        cohen_d=cohens_d,
-        bin_centers=bin_centers,
-        normalize=True,
-        dpi=150,
-        cells_per_page=4
-    )
 
+    # # --- Spatial-profile PDFs (individual cells) ---
+    # RT.plot_individual_reliable_cells_to_pdf(
+    #     spatial_activity=normalized_spatial_activity,
+    #     reliable_cells=reliable_cells,
+    #     save_directory=reliablecell_save_directory,
+    #     avg_cc=avg_cc,
+    #     cohen_d=cohens_d,
+    #     bin_centers=bin_centers,
+    #     normalize=True,
+    #     dpi=150,
+    #     cells_per_page=4
+    # )
+    # RT.plot_individual_reliable_cells_to_pdf(
+    #     spatial_activity=normalized_spatial_activity,
+    #     reliable_cells=combined_reliable,
+    #     save_directory=combinedreliablecell_save_directory,
+    #     avg_cc=avg_cc,
+    #     cohen_d=cohens_d,
+    #     bin_centers=bin_centers,
+    #     normalize=True,
+    #     dpi=150,
+    #     cells_per_page=4
+    # )
+
+    # --- Cross-validated response plots (existing blue-scale style) ---
     fig1, _ = RV.create_response_plot(normalized_spatial_activity, reliable_cells, clim=(0, 1))
     fig1.savefig(os.path.join(reliablecell_save_directory, 'reliable_cells.png'), dpi=150)
+    plt.close(fig1)
 
     fig2, _ = RV.create_response_plot(normalized_spatial_activity, combined_reliable, clim=(0, 1))
     fig2.savefig(os.path.join(combinedreliablecell_save_directory, 'combined_reliable_cells.png'), dpi=150)
+    plt.close(fig2)
+
+    # --- Parula cross-validated heatmaps (odd | even, sorted by odd) ---
+    create_heatmap_responseplot(
+        normalized_spatial_activity, reliable_cells, bin_centers,
+        title=f'Reliable cells  (n={np.sum(reliable_cells)})',
+        save_path=os.path.join(reliablecell_save_directory, 'reliable_cells_heatmap.png')
+    )
+    create_heatmap_responseplot(
+        normalized_spatial_activity, combined_reliable, bin_centers,
+        title=f'Combined-reliable cells  (n={np.sum(combined_reliable)})',
+        save_path=os.path.join(combinedreliablecell_save_directory, 'combined_reliable_cells_heatmap.png')
+    )
     
     # Calculate median coordinates for each cell (needed for combining datasets)
     med_coords = np.zeros((len(twop_dict['stat']), 2))
@@ -416,121 +521,68 @@ def preprocess_2pVR(twop_filepath):
 
 if __name__ == "__main__":
     
-
     # twop_filepaths = [
-    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251015_JSY_JSY052_SpatialModulation_Day7\TSeries-10152025-1103-001'
-
-    #     # r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260202_JSY_JSY061_SpMod_AxonalImaging_Day1\TSeries-02022026-1804-001"
-
-    #     # r'D:\V1_SpatialModulation\2p\V1_window\JSY061_ChronicImaging_Axonal\260202_JSY_JSY061_SpMod_AxonalImaging_Day1\TSeries-02022026-1804-001',
-    #     # r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251014_JSY_JSY052_SpatialModulation_Day6\TSeries-10142025-1647-003',
-    #     # r'F:\2P\unprocessed\251123_JSY_JSY044_SpMod_OpenLoopVR_Stationary\TSeries-11232025-1222-001',
-    #     # r'D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260205_JSY_JSY061_SpMod_AxonalImaging_Day4\TSeries-02052026-1833-002',
-    #     # r'D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260206_JSY_JSY061_SpMod_AxonalImaging_Day5\TSeries-02062026-1850-001',
-    #     # r'D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260207_JSY_JSY061_SpMod_AxonalImaging_Day6\TSeries-02072026-2023-001',
-    #     # r"D:\V1_SpatialModulation\2p\V1_axonal\JSY061_ChronicImaging_window\260208_JSY_JSY061_SpMod_AxonalImaging_Day7\TSeries-02082026-1826-001"
-    #     ]
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\250620_JSY_JSY040_SpatialModulation_Day1_V1Prism\TSeries-06202025-1515-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\250622_JSY_JSY040_SpatialModulation_Day3_V1Prism\TSeries-06222025-1550-001'
+    # ]
+    
+    
+    # twop_filepaths = [
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250616_JSY_JSY041_SpatialModulation_Day1_V1Prism\TSeries-06162025-1521-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250618_JSY_JSY041_SpatialModulation_Day3_V1Prism\TSeries-06182025-1641-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250620_JSY_JSY041_SpatialModulation_Day5_V1Prism\TSeries-06202025-1515-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250622_JSY_JSY041_SpatialModulation_Day7_V1Prism\TSeries-06222025-1550-001'
+    # ]
+    
+    
+    # twop_filepaths = [
+    #     r"F:\2P\unprocessed\JSY044\250811_JSY_JSY044_SpatialModulation_Day1\TSeries-08112025-1505-001",
+    #     r"F:\2P\unprocessed\JSY044\250813_JSY_JSY044_SpatialModulation_Day3\TSeries-08132025-1456-001",
+    #     r"F:\2P\unprocessed\JSY044\250815_JSY_JSY044_SpatialModulation_Day5\TSeries-08152025-1527-001",
+    #     r"F:\2P\unprocessed\JSY044\250815_JSY_JSY044_SpatialModulation_Day5\TSeries-08152025-1527-002"
+    # ]
 
     # twop_filepaths =[
-    # # r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251101_JSY_JSY051_SpMod_Day1\TSeries-11012025-1725-001',
-    # # r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251102_JSY_JSY051_SpMod_Day2\TSeries-11022025-1642-001',
-    # # r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251103_JSY_JSY051_SpMod_Day3\TSeries-11032025-1715-001',
-    # # r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251104_JSY_JSY051_SpMod_Day4\TSeries-11042025-1418-001',
-    # # r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251105_JSY_JSY051_SpMod_Day5\TSeries-11052025-1512-002'
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251101_JSY_JSY051_SpMod_Day1\TSeries-11012025-1725-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251102_JSY_JSY051_SpMod_Day2\TSeries-11022025-1642-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251103_JSY_JSY051_SpMod_Day3\TSeries-11032025-1715-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251104_JSY_JSY051_SpMod_Day4\TSeries-11042025-1418-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251105_JSY_JSY051_SpMod_Day5\TSeries-11052025-1512-002'
     # ]
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\250620_JSY_JSY040_SpatialModulation_Day1_V1Prism\TSeries-06202025-1515-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\250622_JSY_JSY040_SpatialModulation_Day3_V1Prism\TSeries-06222025-1550-001'
-    
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250616_JSY_JSY041_SpatialModulation_Day1_V1Prism\TSeries-06162025-1521-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250618_JSY_JSY041_SpatialModulation_Day3_V1Prism\TSeries-06182025-1641-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250620_JSY_JSY041_SpatialModulation_Day5_V1Prism\TSeries-06202025-1515-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY041_ChronicImaging\250622_JSY_JSY041_SpatialModulation_Day7_V1Prism\TSeries-06222025-1550-001'
-    
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251101_JSY_JSY051_SpMod_Day1\TSeries-11012025-1725-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251102_JSY_JSY051_SpMod_Day2\TSeries-11022025-1642-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251103_JSY_JSY051_SpMod_Day3\TSeries-11032025-1715-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251104_JSY_JSY051_SpMod_Day4\TSeries-11042025-1418-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251105_JSY_JSY051_SpMod_Day5\TSeries-11052025-1512-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY051_ChronicImaging\251105_JSY_JSY051_SpMod_Day5\TSeries-11052025-1512-002'
-    
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251009_JSY_JSY052_SpatialModulation_Day1\TSeries-10092025-1542-002'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251010_JSY_JSY052_SpatialModulation_Day2\TSeries-10102025-0916-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251011_JSY_JSY052_SpatialModulation_Day3\TSeries-10112025-1441-002'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-002'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251013_JSY_JSY052_SpatialModulation_Day5\TSeries-10132025-1236-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251014_JSY_JSY052_SpatialModulation_Day6\TSeries-10142025-1545-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251014_JSY_JSY052_SpatialModulation_Day6\TSeries-10142025-1545-002'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251014_JSY_JSY052_SpatialModulation_Day6\TSeries-10142025-1647-003'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251015_JSY_JSY052_SpatialModulation_Day7\TSeries-10152025-1103-001'
-    
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251030_JSY_JSY054_SpMod_Day1\TSeries-10302025-1512-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251031_JSY_JSY054_SpMod_Day2\TSeries-10312025-1751-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251101_JSY_JSY054_SpMod_Day3\TSeries-11012025-1725-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251102_JSY_JSY054_SpMod_Day4\TSeries-11022025-1642-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251103_JSY_JSY054_SpMod_Day5\TSeries-11032025-1715-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251104_JSY_JSY054_SpMod_Day6\TSeries-11042025-1418-001'
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251105_JSY_JSY054_SpMod_Day7\TSeries-11052025-1512-001'
-
 
     # twop_filepaths = [
-    # r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251205_JSY_JSY055_SpatialModulation_Day1\TSeries-12052025-1740-001',
-    # r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251206_JSY_JSY055_SpatialModulation_Day2\TSeries-12062025-1810-001',
-    # r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251207_JSY_JSY055_SpatialModulation_Day3\TSeries-12072025-1825-001',
-    # r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251208_JSY_JSY055_SpatialModulation_Day4\TSeries-12082025-1633-001',
-    # r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251209_JSY_JSY055_SpatialModualtion_Day5\TSeries-12092025-2000-001',
-    # r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251210_JSY_JSY055_SpatialModulation_Day6\TSeries-12102025-1702-001',
-    # r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251211_JSY_JSY055_SpatialModulation_Day7\TSeries-12112025-1631-001'
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251009_JSY_JSY052_SpatialModulation_Day1\TSeries-10092025-1542-002',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251010_JSY_JSY052_SpatialModulation_Day2\TSeries-10102025-0916-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251011_JSY_JSY052_SpatialModulation_Day3\TSeries-10112025-1441-002',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-002',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251013_JSY_JSY052_SpatialModulation_Day5\TSeries-10132025-1236-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251014_JSY_JSY052_SpatialModulation_Day6\TSeries-10142025-1545-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251014_JSY_JSY052_SpatialModulation_Day6\TSeries-10142025-1545-002',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251014_JSY_JSY052_SpatialModulation_Day6\TSeries-10142025-1647-003',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251015_JSY_JSY052_SpatialModulation_Day7\TSeries-10152025-1103-001'
     # ]
-
+    
     twop_filepaths = [
-        # r"F:\2P\unprocessed\JSY044\250811_JSY_JSY044_SpatialModulation_Day1\TSeries-08112025-1505-001",
-        # r"F:\2P\unprocessed\JSY044\250813_JSY_JSY044_SpatialModulation_Day3\TSeries-08132025-1456-001",
-        # r"F:\2P\unprocessed\JSY044\250815_JSY_JSY044_SpatialModulation_Day5\TSeries-08152025-1527-001",
-        r"F:\2P\unprocessed\JSY044\250815_JSY_JSY044_SpatialModulation_Day5\TSeries-08152025-1527-002"
+        # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251030_JSY_JSY054_SpMod_Day1\TSeries-10302025-1512-001',
+        # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251031_JSY_JSY054_SpMod_Day2\TSeries-10312025-1751-001',
+        # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251101_JSY_JSY054_SpMod_Day3\TSeries-11012025-1725-001',
+        # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251102_JSY_JSY054_SpMod_Day4\TSeries-11022025-1642-001',
+        # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251103_JSY_JSY054_SpMod_Day5\TSeries-11032025-1715-001',
+        # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251104_JSY_JSY054_SpMod_Day6\TSeries-11042025-1418-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251105_JSY_JSY054_SpMod_Day7\TSeries-11052025-1512-001'
     ]
+    
     # twop_filepaths = [
-    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250811_JSY_JSY044_SpatialModulation_Day1\TSeries-08112025-1505-001',]
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1_raw_separateregistration\TSeries-09062025-1308-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlvr_filepathronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2_raw_separateregistration\TSeries-09072025-1257-001"
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09072025_01-18-32.txt"
-    # twop_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_raw_separateregistration\TSeries-09082025-1540-001"
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09082025_04-02-31.txt"
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250909_JSY_JSY044_SpatialModulation_Day4\TSeries-09092025-1256-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09092025_01-15-55.txt"
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250910_JSY_JSY044_SpatialModulation_Day5\TSeries-09102025-1340-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09102025_02-14-21.txt"
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250911_JSY_JSY044_SpatialModulation_Day6\TSeries-09112025-1414-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09112025_02-48-03.txt"
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250912_JSY_JSY044_SpatialModulation_Day7\TSeries-09122025-1334-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09122025_01-57-03.txt"
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251205_JSY_JSY055_SpatialModulation_Day1\TSeries-12052025-1740-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251206_JSY_JSY055_SpatialModulation_Day2\TSeries-12062025-1810-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251207_JSY_JSY055_SpatialModulation_Day3\TSeries-12072025-1825-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251208_JSY_JSY055_SpatialModulation_Day4\TSeries-12082025-1633-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251209_JSY_JSY055_SpatialModualtion_Day5\TSeries-12092025-2000-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251210_JSY_JSY055_SpatialModulation_Day6\TSeries-12102025-1702-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251211_JSY_JSY055_SpatialModulation_Day7\TSeries-12112025-1631-001'
+    # ]
 
-
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1_raw_separateregistration\TSeries-09062025-1308-002'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09062025_02-09-47.txt"
-    # twop_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250907_JSY_JSY044_SpaitalModulation_Day2_raw_separateregistration\TSeries-09072025-1257-002"
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09072025_01-39-00.txt"
-    # twop_filepath = r"D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250908_JSY_JSY044_SpatialModulation_Day3_raw_separateregistration\TSeries-09082025-1540-002"
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09082025_04-14-19.txt"
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250909_JSY_JSY044_SpatialModulation_Day4\TSeries-09092025-1256-002'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09092025_01-29-34.txt"
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250910_JSY_JSY044_SpatialModulation_Day5\TSeries-09102025-1340-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09102025_02-14-21.txt"
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250911_JSY_JSY044_SpatialModulation_Day6\TSeries-09112025-1414-002'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09112025_03-10-04.txt"
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250912_JSY_JSY044_SpatialModulation_Day7\TSeries-09122025-1334-002'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_09122025_02-11-23.txt"
-
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250811_JSY_JSY044_SpatialModulation_Day1\TSeries-08112025-1505-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_08112025_04-04-19.txt"
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250813_JSY_JSY044_SpatialModulation_Day3\TSeries-08132025-1456-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_08132025_04-05-48.txt"
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250815_JSY_JSY044_SpatialModulation_Day5\TSeries-08152025-1527-001'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_08152025_03-44-41.txt"
-    # twop_filepath = r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250815_JSY_JSY044_SpatialModulation_Day5\TSeries-08152025-1527-002'
-    # vr_filepath = r"D:\V1_SpatialModulation\V1_SpatialMod_VRLog\VRlog_JSY038_08152025_05-30-39.txt"    
-    
-    
 
     # ==========================================================================
     # Process all files in a loop

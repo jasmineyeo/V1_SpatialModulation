@@ -1,6 +1,12 @@
 import numpy as np
 from scipy.ndimage import gaussian_filter1d
 import matplotlib.pyplot as plt
+from matplotlib import rcParams
+rcParams['legend.fontsize'] = 20
+rcParams['axes.labelsize'] = 20
+rcParams['axes.titlesize'] = 25
+rcParams['xtick.labelsize'] = 20
+rcParams['ytick.labelsize'] = 20
 from helper import BehavioralDataFiltering as DF, SpatialDiscretization as SD
 
 def calculate_sparsity_index(spatial_response):
@@ -274,7 +280,6 @@ def find_optimal_temporal_offset(twop_dict, vr_dict, framerate, offset_range=Non
         Recommended optimal offset (consensus across metrics)
     """
     if offset_range is None:
-        # offset_range = [0, 1, 2, 3, 4, 5, 6, 7, 8]
         offset_range = [-5, -4, -3, -2, -1, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10]
     
     # print("Finding optimal temporal offset based on tuning curve sharpness...")
@@ -996,34 +1001,51 @@ def demonstrate_simple_offset_effect(twop_filepath, vr_filepath, cell_idx=None, 
     print("\nCreating 5 detailed examples...")
     detailed_figs = create_five_detailed_examples(twop_dict, vr_dict, framerate, optimal_offset)
     
-    plt.show()
+    # plt.show()
     
     return fig1, multiple_figs, detailed_figs
 
 def apply_temporal_offset(spike_data, offset_frames):
     """
     Apply a temporal offset to spike data relative to location data.
-    Positive offset means neural activity shifted forward in time (appears later relative to location).
-    Negative offset means neural activity shifted backward in time (appears earlier relative to location).
+
+    Positive offset (+N): spike array is shifted right by N frames.
+      → spike_data[:, :-N] moves to spike_data[:, N:]
+      → First N frames are padded with zeros (start of session).
+      → Interpretation: "neural activity appears LATER relative to position."
+        This corrects for GCaMP indicator lag — the calcium signal lags the
+        true spike, so shifting spikes forward aligns them with the actual
+        position the animal was in when it fired.
+
+    Negative offset (-N): spike array is shifted left by N frames.
+      → spike_data[:, N:] moves to spike_data[:, :-N]
+      → Last N frames are padded with zeros (end of session / end of each trial edge).
+      → Interpretation: "neural activity appears EARLIER relative to position."
+        This is NOT physiologically meaningful for GCaMP data — it would imply
+        the neuron fires before the animal reaches that position.
+
+    ZERO-PADDING ARTIFACT (important for offset optimisation):
+      The trailing zeros introduced by negative offsets fall into real spatial
+      bins (typically the corridor end), suppressing activity there and
+      artificially inflating sparsity and spatial-information scores.  This is
+      the reason the offset optimiser can select large negative values (e.g.
+      -13 frames) even though those offsets make no biological sense.
+      See find_optimal_temporal_offset() for the recommended offset_range fix.
     """
-    n_cells, n_frames = spike_data.shape
-    
     if offset_frames == 0:
         return spike_data
-    
-    # Create new arrays to hold offset data
+
     offset_spike_data = np.zeros_like(spike_data)
-    
+
     if offset_frames > 0:
-        # Positive offset: spikes shifted forward (later) relative to location
-        # Keep later part of spikes
+        # Correct for GCaMP lag: align delayed calcium signal to true position.
         offset_spike_data[:, offset_frames:] = spike_data[:, :-offset_frames]
     else:
-        # Negative offset: spikes shifted backward (earlier) relative to location
-        # Keep earlier part of spikes
+        # Advance spikes relative to position — only for exploratory use.
+        # Trailing zeros are an artifact; see docstring above.
         abs_offset = abs(offset_frames)
         offset_spike_data[:, :-abs_offset] = spike_data[:, abs_offset:]
-    
+
     return offset_spike_data
 
 def smooth_spikes(spike_data, fps=10, window_ms=250):
@@ -1221,4 +1243,4 @@ if __name__ == "__main__":
     
     # Plot results for multiple cells
     plot_comparison(spikes_2d, smoothed_2d, fps=10)
-    plt.show()
+    # plt.show()

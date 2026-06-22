@@ -48,7 +48,7 @@ def batch_SMI_layerspecific_analysis(skip_existing=True):
         # r"F:\2P\unprocessed\JSY044\250811_JSY_JSY044_SpatialModulation_Day1\TSeries-08112025-1505-001",
         # r"F:\2P\unprocessed\JSY044\250813_JSY_JSY044_SpatialModulation_Day3\TSeries-08132025-1456-001",
         # r"F:\2P\unprocessed\JSY044\250815_JSY_JSY044_SpatialModulation_Day5\TSeries-08152025-1527-001",
-        r"F:\2P\unprocessed\JSY044\250815_JSY_JSY044_SpatialModulation_Day5\TSeries-08152025-1527-002"
+        # r"F:\2P\unprocessed\JSY044\250815_JSY_JSY044_SpatialModulation_Day5\TSeries-08152025-1527-002"
         
         # r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250811_JSY_JSY044_SpatialModulation_Day1\TSeries-08112025-1505-001'
         # r'D:\V1_SpatialModulation\2p\V1_prism\JSY044_ChronicImaging\250906_JSY_JSY044_SpatialModulation_Day1\TSeries-09062025-1308-001',
@@ -68,7 +68,7 @@ def batch_SMI_layerspecific_analysis(skip_existing=True):
 
         # # --- JSY052  ---
         # r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251009_JSY_JSY052_SpatialModulation_Day1\TSeries-10092025-1542-002',
-        # r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251010_JSY_JSY052_SpatialModulation_Day2\TSeries-10102025-0916-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251010_JSY_JSY052_SpatialModulation_Day2\TSeries-10102025-0916-001',
         # r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251011_JSY_JSY052_SpatialModulation_Day3\TSeries-10112025-1441-002',
         # r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-001',
         # r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251013_JSY_JSY052_SpatialModulation_Day5\TSeries-10132025-1236-001',
@@ -144,4 +144,4 @@ def batch_SMI_layerspecific_analysis(skip_existing=True):
 
 
 if __name__ == "__main__":
-    batch_SMI_layerspecific_analysis(skip_existing=True)
+    batch_SMI_layerspecific_analysis(skip_existing=False)
