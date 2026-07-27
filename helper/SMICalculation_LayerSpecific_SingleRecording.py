@@ -255,6 +255,7 @@ def visualize_onset_filtering(spatial_activity, reliable_cells, non_onset_cells,
 
 
 def Run_SMI_Layer_Analysis(data_filepath,
+                           recording_type='prism',
                            exclude_first_bins=5,
                            exclude_last_bins=5,
                            segment_distance=28,
@@ -270,6 +271,12 @@ def Run_SMI_Layer_Analysis(data_filepath,
     ----------
     data_filepath : str
         Full path to the TSeries folder (same as in your previous script).
+    recording_type : str
+        'prism' (default) splits cells into cortical layers (L2/3, L4, L5, L6)
+        by depth, as for GRIN-prism recordings that span multiple layers.
+        'window' treats all cells as a single layer, since cranial-window
+        recordings image only one depth — the rest of the pipeline
+        (SMI calculation, per-"layer" stats/plots, h5 output) is unchanged.
     exclude_first_bins : int
         Number of spatial bins at the start to exclude (onset filter).
     exclude_last_bins : int
@@ -292,12 +299,16 @@ def Run_SMI_Layer_Analysis(data_filepath,
                        parameters, med_coords, bin_centers, rejected_info, figures
     """
 
+    if recording_type not in ('prism', 'window'):
+        raise ValueError(f"recording_type must be 'prism' or 'window', got '{recording_type}'")
+
     try:
         if verbose:
             print("="*80)
             print("SMI LAYER-SPECIFIC ANALYSIS WITH ONSET FILTERING")
             print("="*80)
             print(f"Data: {data_filepath}")
+            print(f"Recording type: {recording_type}")
             print(f"Onset filter: first {exclude_first_bins} bins, last {exclude_last_bins} bins")
             print("="*80 + "\n")
 
@@ -336,7 +347,10 @@ def Run_SMI_Layer_Analysis(data_filepath,
         twop_dict = raw_twop_data.calc_dFF()
 
         med_coords = np.array([cell['med'] for cell in twop_dict['stat']])
-        layer_cells, layer_boundaries = SMI_Layer.identify_layers(med_coords)
+        if recording_type == 'window':
+            layer_cells, layer_boundaries = SMI_Layer.identify_single_layer(med_coords)
+        else:
+            layer_cells, layer_boundaries = SMI_Layer.identify_layers(med_coords)
 
         # STEP 3: APPLY ONSET FILTERING
         if verbose:
@@ -422,6 +436,7 @@ def Run_SMI_Layer_Analysis(data_filepath,
         animal_id = animal_match.group(1) if animal_match else "unknown"
 
         parameters = {
+            'recording_type': recording_type,
             'exclude_first_bins': exclude_first_bins,
             'exclude_last_bins': exclude_last_bins,
             'segment_distance': segment_distance,
@@ -448,8 +463,8 @@ def Run_SMI_Layer_Analysis(data_filepath,
         fig = None
         try:
             fig, ax = plt.subplots(figsize=(10, 6))
-            layer_order = ['L2/3', 'L4', 'L5', 'L6']
-            colors = ['#1E88E5', '#FF9800', '#4CAF50', '#E53935']
+            layer_order = list(layer_cells.keys())
+            colors = ['#1E88E5', '#FF9800', '#4CAF50', '#E53935', '#9467bd', '#8c564b']
 
             data_for_plot = []
             labels = []

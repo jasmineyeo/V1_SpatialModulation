@@ -31,6 +31,13 @@ def extract_date_and_session(session_dir):
 
 
 def batch_SMI_layerspecific_analysis(skip_existing=True):
+    """
+    Each entry in session_dirs is either a bare path (defaults to recording_type='prism',
+    i.e. depth-resolved layer splitting) or a (path, recording_type) tuple where
+    recording_type is 'prism' or 'window' ('window' = single cortical depth, e.g. a
+    cranial-window recording — SMI is still computed the same way, just without
+    splitting cells into L2/3-L6 layers).
+    """
 
     session_dirs = [
 
@@ -68,7 +75,7 @@ def batch_SMI_layerspecific_analysis(skip_existing=True):
 
         # # --- JSY052  ---
         # r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251009_JSY_JSY052_SpatialModulation_Day1\TSeries-10092025-1542-002',
-        r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251010_JSY_JSY052_SpatialModulation_Day2\TSeries-10102025-0916-001',
+        # r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251010_JSY_JSY052_SpatialModulation_Day2\TSeries-10102025-0916-001',
         # r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251011_JSY_JSY052_SpatialModulation_Day3\TSeries-10112025-1441-002',
         # r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-001',
         # r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251013_JSY_JSY052_SpatialModulation_Day5\TSeries-10132025-1236-001',
@@ -92,6 +99,46 @@ def batch_SMI_layerspecific_analysis(skip_existing=True):
         # r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251209_JSY_JSY055_SpatialModualtion_Day5\TSeries-12092025-2000-001',
         # r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251210_JSY_JSY055_SpatialModulation_Day6\TSeries-12102025-1702-001',
         # r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251211_JSY_JSY055_SpatialModulation_Day7\TSeries-12112025-1631-001',
+        
+        
+        # --- JSY077 (all missing smi_results — priority) ---
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260623_JSY_JSY077_SpMod_RSCSomatic_Day1\TSeries-06232026-2049-001',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260624_JSY_JSY077_SpMod_RSCSomatic_Day2\TSeries-06242026-2059-001',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260624_JSY_JSY077_SpMod_RSCSomatic_Day2\TSeries-06242026-2059-002',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260625_JSY_JSY077_SpMod_RSCSomatic_Day3\TSeries-06252026-2129-001',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260626_JSY_JSY077_SpMod_RSCSomatic_Day4\TSeries-06262026-2048-001',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260626_JSY_JSY077_SpMod_RSCSomatic_Day4\TSeries-06262026-2048-002',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260628_JSY_JSY077_SpMod_RSCSomatic_Day5\TSeries-06282026-2057-001',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260629_JSY_JSY077_SpMod_RSCSomatic_Day6\TSeries-06292026-2118-001',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260630_JSY_JSY077_SpMod_RSCSomatic_Day7\TSeries-06302026-2053-001',
+         'window'),
+
+
+        # --- JSY080 (all missing smi_results — priority) ---
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260622_JSY_JSY080_SpMod_RSCSomatic_Day1\TSeries-06222026-2120-001',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260623_JSY_JSY080_SpMod_RSCSomatic_Day2\TSeries-06232026-2049-001',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260624_JSY_JSY080_SpMod_RSCSomatic_Day3\TSeries-06242026-2059-001',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260624_JSY_JSY080_SpMod_RSCSomatic_Day3\TSeries-06242026-2059-002',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260625_JSY_JSY080_SpMod_RSCSomatic_Day4\TSeries-06252026-2129-001',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260626_JSY_JSY080_SpMod_RSCSomatic_Day5\TSeries-06262026-2048-001',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260628_JSY_JSY080_SpMod_RSCSomatic_Day6\TSeries-06282026-2057-001',
+         'window'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260629_JSY_JSY080_SpMod_RSCSomatic_Day7\TSeries-06292026-2118-001',
+         'window')
     ]
 
     print("\n" + "="*90)
@@ -103,9 +150,11 @@ def batch_SMI_layerspecific_analysis(skip_existing=True):
     n_done = 0
     n_error = 0
 
-    for idx, session_dir in enumerate(session_dirs):
+    for idx, entry in enumerate(session_dirs):
+        session_dir, recording_type = entry if isinstance(entry, tuple) else (entry, 'prism')
+
         print("\n" + "-"*80)
-        print(f"[{idx+1}/{len(session_dirs)}] {session_dir}")
+        print(f"[{idx+1}/{len(session_dirs)}] {session_dir}  [{recording_type}]")
         print("-"*80)
 
         if not os.path.isdir(session_dir):
@@ -128,7 +177,7 @@ def batch_SMI_layerspecific_analysis(skip_existing=True):
             date_str, session_id = extract_date_and_session(session_dir)
             print(f"  Date: {date_str}, Session: {session_id}")
 
-            Run_SMI_Layer_Analysis(data_filepath=session_dir)
+            Run_SMI_Layer_Analysis(data_filepath=session_dir, recording_type=recording_type)
             print("  COMPLETE")
             n_done += 1
 

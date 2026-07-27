@@ -216,8 +216,20 @@ def convert_ops_to_serializable(ops_data):
     
     return serializable_ops
 
-def preprocess_2pVR(twop_filepath):
-    
+def preprocess_2pVR(twop_filepath, area='V1'):
+    """
+    area : str
+        'V1' (default) — reliability criteria unchanged from the original pipeline
+        (flat min_pattern_corr / peak_distance_threshold, min_cc_threshold=0.1).
+        'RSC' — drops the redundant min_cc_threshold floor and uses the
+        shuffle-normalized pattern/peak-stability test instead of the flat one,
+        since those flat floors were calibrated on V1's (cleaner) noise floor and
+        would disproportionately exclude noisier-but-genuinely-tuned RSC cells.
+    """
+    if area not in ('V1', 'RSC'):
+        raise ValueError(f"area must be 'V1' or 'RSC', got '{area}'")
+
+
     # Find VRlog file — case-insensitive, check TSeries folder then parent folder
     import glob
     search_dirs = [twop_filepath, os.path.dirname(twop_filepath)]
@@ -298,17 +310,32 @@ def preprocess_2pVR(twop_filepath):
     # 4. Test for reliability for individual cells
     normalized_spatial_activity = RT.normalize_spatial_activity(smoothed_spatial_activity)
 
-    combined_reliable, reliable_cells, _, avg_cc, cohens_d, _, _, _ = RT.combined_reliability_test_improved(
-        smoothed_spatial_activity,
-        n_shuffles = 200,
-        cc_percentile=90,
-        cohen_threshold=0.8,
-        min_cc_threshold=0.1,
-        min_pattern_corr=0.3,
-        peak_distance_threshold=5,
-        use_activity_threshold=True,
-        activity_method='absolute_percentile'
-    )
+    print(f"Reliability criteria: area={area}")
+    if area == 'RSC':
+        combined_reliable, reliable_cells, _, avg_cc, cohens_d, _, _, _ = RT.combined_reliability_test_improved(
+            smoothed_spatial_activity,
+            n_shuffles = 300,
+            cc_percentile=90,
+            cohen_threshold=0.8,
+            min_cc_threshold=0,          # redundant given cc_percentile; dropped rather than V1-tuned
+            pattern_test='shuffled',     # shuffle-normalized pattern/peak-stability test, not V1's flat floor
+            pattern_percentile=95,
+            peak_distance_percentile=95,
+            use_activity_threshold=True,
+            activity_method='absolute_percentile'
+        )
+    else:
+        combined_reliable, reliable_cells, _, avg_cc, cohens_d, _, _, _ = RT.combined_reliability_test_improved(
+            smoothed_spatial_activity,
+            n_shuffles = 300,
+            cc_percentile=90,
+            cohen_threshold=0.8,
+            min_cc_threshold=0.1,
+            min_pattern_corr=0.3,
+            peak_distance_threshold=5,
+            use_activity_threshold=True,
+            activity_method='absolute_percentile'
+        )
 
     print(f"Found {np.sum(reliable_cells)} reliable cells out of {len(reliable_cells)}")
     print(f"Found {np.sum(combined_reliable)} combined_reliable cells out of {len(combined_reliable)}")
@@ -459,6 +486,7 @@ def preprocess_2pVR(twop_filepath):
         'vr_filepath': str(vr_filepath),
         'processing_timestamp': datetime.datetime.now().isoformat(),
         'processing_params': {
+            'area': str(area),
             'framerate': float(framerate),
             'optimal_offset': int(optimal_offset),
             'window_cm': float(window_cm),
@@ -521,6 +549,30 @@ def preprocess_2pVR(twop_filepath):
 
 if __name__ == "__main__":
     
+    # Each entry is either a bare path (defaults to area='V1') or a (path, area) tuple,
+    # where area is 'V1' or 'RSC' — see preprocess_2pVR docstring.
+    twop_filepaths = [
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260623_JSY_JSY077_SpMod_RSCSomatic_Day1\TSeries-06232026-2049-001', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260624_JSY_JSY077_SpMod_RSCSomatic_Day2\TSeries-06242026-2059-001', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260624_JSY_JSY077_SpMod_RSCSomatic_Day2\TSeries-06242026-2059-002', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260625_JSY_JSY077_SpMod_RSCSomatic_Day3\TSeries-06252026-2129-001', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260626_JSY_JSY077_SpMod_RSCSomatic_Day4\TSeries-06262026-2048-001', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260626_JSY_JSY077_SpMod_RSCSomatic_Day4\TSeries-06262026-2048-002', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260628_JSY_JSY077_SpMod_RSCSomatic_Day5\TSeries-06282026-2057-001', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260629_JSY_JSY077_SpMod_RSCSomatic_Day6\TSeries-06292026-2118-001', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260630_JSY_JSY077_SpMod_RSCSomatic_Day7\TSeries-06302026-2053-001', 'RSC'),
+
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260622_JSY_JSY080_SpMod_RSCSomatic_Day1\TSeries-06222026-2120-001', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260623_JSY_JSY080_SpMod_RSCSomatic_Day2\TSeries-06232026-2049-001', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260624_JSY_JSY080_SpMod_RSCSomatic_Day3\TSeries-06242026-2059-001', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260624_JSY_JSY080_SpMod_RSCSomatic_Day3\TSeries-06242026-2059-002', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260625_JSY_JSY080_SpMod_RSCSomatic_Day4\TSeries-06252026-2129-001', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260626_JSY_JSY080_SpMod_RSCSomatic_Day5\TSeries-06262026-2048-001', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260628_JSY_JSY080_SpMod_RSCSomatic_Day6\TSeries-06282026-2057-001', 'RSC'),
+        (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY080_ChronicImaging_RSCSomatic\260629_JSY_JSY080_SpMod_RSCSomatic_Day7\TSeries-06292026-2118-001', 'RSC'),
+    ]
+    
+    
     # twop_filepaths = [
     #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\250620_JSY_JSY040_SpatialModulation_Day1_V1Prism\TSeries-06202025-1515-001',
     #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY040_ChronicImaging\250622_JSY_JSY040_SpatialModulation_Day3_V1Prism\TSeries-06222025-1550-001'
@@ -563,15 +615,15 @@ if __name__ == "__main__":
     #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChrnoicImaging\251015_JSY_JSY052_SpatialModulation_Day7\TSeries-10152025-1103-001'
     # ]
     
-    twop_filepaths = [
-        # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251030_JSY_JSY054_SpMod_Day1\TSeries-10302025-1512-001',
-        # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251031_JSY_JSY054_SpMod_Day2\TSeries-10312025-1751-001',
-        # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251101_JSY_JSY054_SpMod_Day3\TSeries-11012025-1725-001',
-        # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251102_JSY_JSY054_SpMod_Day4\TSeries-11022025-1642-001',
-        # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251103_JSY_JSY054_SpMod_Day5\TSeries-11032025-1715-001',
-        # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251104_JSY_JSY054_SpMod_Day6\TSeries-11042025-1418-001',
-        r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251105_JSY_JSY054_SpMod_Day7\TSeries-11052025-1512-001'
-    ]
+    # twop_filepaths = [
+    #     # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251030_JSY_JSY054_SpMod_Day1\TSeries-10302025-1512-001',
+    #     # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251031_JSY_JSY054_SpMod_Day2\TSeries-10312025-1751-001',
+    #     # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251101_JSY_JSY054_SpMod_Day3\TSeries-11012025-1725-001',
+    #     # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251102_JSY_JSY054_SpMod_Day4\TSeries-11022025-1642-001',
+    #     # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251103_JSY_JSY054_SpMod_Day5\TSeries-11032025-1715-001',
+    #     # r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251104_JSY_JSY054_SpMod_Day6\TSeries-11042025-1418-001',
+    #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging\251105_JSY_JSY054_SpMod_Day7\TSeries-11052025-1512-001'
+    # ]
     
     # twop_filepaths = [
     #     r'D:\V1_SpatialModulation\2p\V1_prism\JSY055_ChronicImaging\251205_JSY_JSY055_SpatialModulation_Day1\TSeries-12052025-1740-001',
@@ -591,13 +643,15 @@ if __name__ == "__main__":
     successful = []
     failed = []
 
-    for i, twop_filepath in enumerate(twop_filepaths):
+    for i, entry in enumerate(twop_filepaths):
+        twop_filepath, area = entry if isinstance(entry, tuple) else (entry, 'V1')
+
         print("\n" + "=" * 80)
-        print(f"Processing {i+1}/{n_total}: {os.path.basename(twop_filepath)}")
+        print(f"Processing {i+1}/{n_total}: {os.path.basename(twop_filepath)}  [{area}]")
         print("=" * 80)
 
         try:
-            preprocess_2pVR(twop_filepath)
+            preprocess_2pVR(twop_filepath, area=area)
             successful.append(twop_filepath)
             print(f"Successfully processed: {os.path.basename(twop_filepath)}")
         except Exception as e:

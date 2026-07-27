@@ -849,28 +849,136 @@ def test_cell_reliability_improved(spatial_activity, n_shuffles=1000,
             
     return reliable_cells, average_cc, cohen_d, active_cells
 
-def combined_reliability_test_improved(spatial_activity, n_shuffles=1000, 
+def evaluate_pattern_similarity_shuffled(spatial_activity, n_shuffles=300,
+                                       pattern_percentile=95,
+                                       peak_distance_percentile=95):
+    """
+    Shuffle-normalized alternative to evaluate_pattern_similarity_improved.
+
+    Instead of flat floors (min_pattern_corr, peak_distance_threshold) calibrated on
+    one area's noise floor, each cell's real odd/even pattern correlation and peak
+    stability are compared against that same cell's own circular-shift null — the
+    same logic test_cell_reliability_improved already uses for the correlation test.
+    A noisier-but-genuinely-tuned cell (e.g. RSC vs. V1) gets a proportionally more
+    lenient effective bar instead of being judged against a threshold tuned for a
+    cleaner area.
+
+    Parameters
+    ----------
+    spatial_activity : numpy.ndarray
+        Activity matrix (n_cells x n_trials x n_spatial_bins)
+    n_shuffles : int
+        Number of circular-shift shuffles used to build each cell's null.
+    pattern_percentile : float
+        Real odd/even pattern correlation must exceed this percentile of its own
+        shuffled null to pass.
+    peak_distance_percentile : float
+        Real peak distance must be smaller than the (100 - peak_distance_percentile)th
+        percentile of its own shuffled null (i.e. more stable than most shuffles).
+
+    Returns
+    -------
+    pattern_reliable : numpy.ndarray
+        Boolean array of cells with shuffle-significant, stable patterns.
+    odd_even_corr : numpy.ndarray
+        Real odd/even pattern correlation for each cell.
+    peak_distances : numpy.ndarray
+        Real peak distance (bins) between odd/even trials for each cell.
+    """
+    n_cells, n_trials, n_bins = spatial_activity.shape
+
+    pattern_reliable = np.zeros(n_cells, dtype=bool)
+    odd_even_corr = np.zeros(n_cells)
+    peak_distances = np.zeros(n_cells)
+
+    odd_trials = np.arange(0, n_trials, 2)
+    even_trials = np.arange(1, n_trials, 2)
+
+    for cell in tqdm(range(n_cells), desc="Testing shuffle-normalized pattern reliability"):
+        cell_activity = spatial_activity[cell]
+
+        odd_mean = np.mean(cell_activity[odd_trials], axis=0)
+        even_mean = np.mean(cell_activity[even_trials], axis=0)
+
+        # Skip cells with no activity
+        if np.max(odd_mean) == 0 or np.max(even_mean) == 0:
+            continue
+
+        real_corr = np.corrcoef(odd_mean, even_mean)[0, 1]
+        real_corr = real_corr if not np.isnan(real_corr) else 0
+        real_peak_dist = abs(np.argmax(odd_mean) - np.argmax(even_mean))
+
+        odd_even_corr[cell] = real_corr
+        peak_distances[cell] = real_peak_dist
+
+        shuffled_corr = np.zeros(n_shuffles)
+        shuffled_peak_dist = np.zeros(n_shuffles)
+
+        for shuffle in range(n_shuffles):
+            activity_rand = np.zeros_like(cell_activity)
+            for trial in range(n_trials):
+                shift = np.random.randint(n_bins)
+                activity_rand[trial] = np.roll(cell_activity[trial], shift)
+
+            odd_rand_mean = np.mean(activity_rand[odd_trials], axis=0)
+            even_rand_mean = np.mean(activity_rand[even_trials], axis=0)
+
+            cc_rand = np.corrcoef(odd_rand_mean, even_rand_mean)[0, 1]
+            shuffled_corr[shuffle] = cc_rand if not np.isnan(cc_rand) else 0
+            shuffled_peak_dist[shuffle] = abs(np.argmax(odd_rand_mean) - np.argmax(even_rand_mean))
+
+        corr_threshold = np.percentile(shuffled_corr, pattern_percentile)
+        peak_dist_threshold = np.percentile(shuffled_peak_dist, 100 - peak_distance_percentile)
+
+        if real_corr > corr_threshold and real_peak_dist <= peak_dist_threshold:
+            pattern_reliable[cell] = True
+
+    return pattern_reliable, odd_even_corr, peak_distances
+
+def combined_reliability_test_improved(spatial_activity, n_shuffles=1000,
                                      cc_percentile=95, cohen_threshold=0.8,
-                                     min_cc_threshold=0.2, min_pattern_corr=0.3, 
+                                     min_cc_threshold=0.2, min_pattern_corr=0.3,
                                      peak_distance_threshold=5,
                                      use_activity_threshold=True,
-                                     activity_method='absolute_percentile'):
+                                     activity_method='absolute_percentile',
+                                     pattern_test='fixed',
+                                     pattern_percentile=95,
+                                     peak_distance_percentile=95,
+                                     pattern_n_shuffles=None):
     """
-    Improved combined reliability test with better activity handling and 
+    Improved combined reliability test with better activity handling and
     clearer pattern similarity evaluation.
+
+    pattern_test : str
+        'fixed' (default) — original flat-threshold pattern test
+        (evaluate_pattern_similarity_improved: min_pattern_corr / peak_distance_threshold).
+        Unchanged from the original pipeline.
+        'shuffled' — evaluate_pattern_similarity_shuffled: compares each cell's real
+        odd/even pattern correlation and peak stability to its own circular-shift null
+        instead of flat floors calibrated on a different area's noise floor.
     """
-    
+    if pattern_test not in ('fixed', 'shuffled'):
+        raise ValueError(f"pattern_test must be 'fixed' or 'shuffled', got '{pattern_test}'")
+
     # Run basic reliability test
     reliable_cells, avg_cc, cohens_d, active_cells = test_cell_reliability_improved(
         spatial_activity, n_shuffles, cc_percentile, cohen_threshold,
         min_cc_threshold, use_activity_threshold, activity_method
     )
-    
+
     # Run pattern similarity test
-    pattern_reliable, odd_even_corr, peak_distances = evaluate_pattern_similarity_improved(
-        spatial_activity, min_pattern_corr, peak_distance_threshold
-    )
-    
+    if pattern_test == 'shuffled':
+        pattern_reliable, odd_even_corr, peak_distances = evaluate_pattern_similarity_shuffled(
+            spatial_activity,
+            n_shuffles=pattern_n_shuffles if pattern_n_shuffles is not None else n_shuffles,
+            pattern_percentile=pattern_percentile,
+            peak_distance_percentile=peak_distance_percentile,
+        )
+    else:
+        pattern_reliable, odd_even_corr, peak_distances = evaluate_pattern_similarity_improved(
+            spatial_activity, min_pattern_corr, peak_distance_threshold
+        )
+
     # Combine results (cells must pass both tests)
     combined_reliable = reliable_cells & pattern_reliable & active_cells
     

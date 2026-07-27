@@ -15,7 +15,23 @@ import os
 
 class SpatialModulationIndexLayerSpecific:
     """Class for analyzing spatial modulation in neural data across cortical layers."""
-    
+
+    # Default colors for known cortical layers; unknown layer names (e.g. single-layer
+    # window recordings) fall back to _FALLBACK_COLOR_CYCLE in the order encountered.
+    _LAYER_COLORS = {
+        'L2/3': '#1f77b4',  # Blue
+        'L4': '#ff7f0e',    # Orange
+        'L5': '#2ca02c',    # Green
+        'L6': '#d62728',    # Red
+    }
+    _FALLBACK_COLOR_CYCLE = ['#9467bd', '#8c564b', '#17becf', '#bcbd22', '#e377c2']
+
+    @classmethod
+    def _get_layer_color(cls, layer_name, fallback_idx=0):
+        if layer_name in cls._LAYER_COLORS:
+            return cls._LAYER_COLORS[layer_name]
+        return cls._FALLBACK_COLOR_CYCLE[fallback_idx % len(cls._FALLBACK_COLOR_CYCLE)]
+
     @staticmethod
     def identify_layers(med_coords, peak_density_method='auto'):
         """
@@ -102,7 +118,33 @@ class SpatialModulationIndexLayerSpecific:
         }
         
         return layer_cells, layer_boundaries
-        
+
+    @staticmethod
+    def identify_single_layer(med_coords, layer_name='All'):
+        """
+        Treat all cells as belonging to a single layer (e.g. for window recordings
+        that only image one cortical depth, unlike depth-resolved prism recordings).
+
+        Parameters:
+        -----------
+        med_coords : numpy.ndarray
+            Median coordinates of cells (cells x dimensions)
+        layer_name : str
+            Label to use for the single layer bucket.
+
+        Returns:
+        --------
+        layer_cells : dict
+            {layer_name: indices of all cells}
+        layer_boundaries : dict
+            {layer_name: (min_y, max_y)}
+        """
+        all_cells = np.arange(med_coords.shape[0])
+        layer_cells = {layer_name: all_cells}
+        layer_boundaries = {layer_name: (np.min(med_coords[:, 0]), np.max(med_coords[:, 0]))}
+        print(f'Single-layer mode: {len(all_cells)} cells assigned to "{layer_name}"')
+        return layer_cells, layer_boundaries
+
     @staticmethod
     def analyze_layer_specific_smi_from_existing_results(smi_results, layer_cells, reliable_cells):
         """
@@ -486,21 +528,13 @@ class SpatialModulationIndexLayerSpecific:
         ax1.set_ylim(y_max, y_min)  # Inverted for top=0
         
         # Extract layer boundaries for visualization
-        for layer_name, cell_indices in layer_cells.items():
+        for layer_idx, (layer_name, cell_indices) in enumerate(layer_cells.items()):
             if len(cell_indices) > 0:
                 upper = np.min(med_coords[cell_indices, 0])
                 lower = np.max(med_coords[cell_indices, 0])
-                
-                # Store the bounds for consistent coloring
-                if layer_name == 'L2/3':
-                    color = '#1f77b4'  # Blue
-                elif layer_name == 'L4':
-                    color = '#ff7f0e'  # Orange
-                elif layer_name == 'L5':
-                    color = '#2ca02c'  # Green
-                elif layer_name == 'L6':
-                    color = '#d62728'  # Red
-                
+
+                color = SpatialModulationIndexLayerSpecific._get_layer_color(layer_name, layer_idx)
+
                 # Fill regions with layer colors
                 ax1.axhspan(upper, lower, alpha=0.2, color=color)
                 
@@ -524,22 +558,14 @@ class SpatialModulationIndexLayerSpecific:
         
         # For each layer, plot reliable and unreliable cells
         legend_elements = []
-        for layer_name, cells in layer_cells.items():
+        for layer_idx, (layer_name, cells) in enumerate(layer_cells.items()):
             if len(cells) > 0:
                 # Find reliable cells in this layer
                 reliable_layer_cells = np.intersect1d(np.where(reliable_cells)[0], cells)
                 unreliable_layer_cells = np.setdiff1d(cells, reliable_layer_cells)
-                
-                # Use the same color mapping as in the left plot
-                if layer_name == 'L2/3':
-                    color = '#1f77b4'  # Blue
-                elif layer_name == 'L4':
-                    color = '#ff7f0e'  # Orange
-                elif layer_name == 'L5':
-                    color = '#2ca02c'  # Green
-                elif layer_name == 'L6':
-                    color = '#d62728'  # Red
-                
+
+                color = SpatialModulationIndexLayerSpecific._get_layer_color(layer_name, layer_idx)
+
                 # Plot reliable cells with higher opacity
                 ax2.scatter(med_coords[reliable_layer_cells, 1], med_coords[reliable_layer_cells, 0], 
                         s=12, alpha=0.9, c=color)
@@ -747,14 +773,18 @@ class SpatialModulationIndexLayerSpecific:
         import numpy as np
         import matplotlib.gridspec as gridspec
         
-        # Define vibrant layer colors 
+        # Define vibrant layer colors (known cortical layers; unknown layer names,
+        # e.g. single-layer window recordings, fall back to a generated palette)
         layer_colors = {
             'L2/3': '#1E88E5',  # Bright blue
             'L4': '#FF9800',    # Bright orange
             'L5': '#4CAF50',    # Vibrant green
             'L6': '#E53935'     # Bright red
         }
-        
+
+        def get_layer_color(name, idx):
+            return layer_colors.get(name, SpatialModulationIndexLayerSpecific._get_layer_color(name, idx))
+
         # Create figure with proportioned layout
         fig = plt.figure(figsize=(16, 10))
         gs = gridspec.GridSpec(1, 2, width_ratios=[3, 1])
@@ -822,9 +852,9 @@ class SpatialModulationIndexLayerSpecific:
             if len(valid_reliable_cells) == 0:
                 continue
                 
-            base_color = layer_colors[layer_name]
+            base_color = get_layer_color(layer_name, active_layers.index(layer_name))
             r, g, b = plt.cm.colors.to_rgb(base_color)
-            
+
             # Check if cells are missing by printing counts
             print(f"{layer_name}: {len(valid_reliable_cells)} valid cells out of {len(reliable_layer_cells)} reliable cells")
             
@@ -899,7 +929,7 @@ class SpatialModulationIndexLayerSpecific:
         
         # Add size/color examples for SMI levels
         example_layer = active_layers[0]  # Just use the first layer for examples
-        base_color = layer_colors[example_layer]
+        base_color = get_layer_color(example_layer, 0)
         r, g, b = plt.cm.colors.to_rgb(base_color)
         
         # Add examples for SMI ranges
@@ -994,7 +1024,7 @@ class SpatialModulationIndexLayerSpecific:
                             va='center', ha='right', fontsize=10)
             
             # Create a custom colormap for this layer
-            base_color = layer_colors[layer_name]
+            base_color = get_layer_color(layer_name, i)
             r, g, b = plt.cm.colors.to_rgb(base_color)
             
             # Create colors for each segment
