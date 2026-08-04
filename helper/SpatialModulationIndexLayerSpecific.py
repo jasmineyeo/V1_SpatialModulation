@@ -33,17 +33,182 @@ class SpatialModulationIndexLayerSpecific:
         return cls._FALLBACK_COLOR_CYCLE[fallback_idx % len(cls._FALLBACK_COLOR_CYCLE)]
 
     @staticmethod
-    def identify_layers(med_coords, peak_density_method='auto'):
+    def estimate_fov_rotation(mean_img):
+        """
+        Interactively estimate the tilt of the cortical layers relative to the
+        imaging plane. Shows the mean FOV image; click two points along a
+        visible layer boundary (or a landmark, e.g. a vessel, known to run
+        parallel to the layers). Returns the angle (degrees) of that line
+        relative to horizontal, which is the rotation needed to make the
+        layers horizontal (used internally by identify_layers via
+        rotation_deg — it does not touch med_coords/ROI pixel positions).
+
+        Requires an interactive matplotlib backend (e.g. Qt5Agg) set by the
+        calling script.
+
+        Parameters:
+        -----------
+        mean_img : numpy.ndarray
+            Mean FOV image (e.g. ops['meanImg']) for visual reference.
+
+        Returns:
+        --------
+        rotation_deg : float
+            Angle of the clicked line relative to horizontal, in degrees.
+        """
+        fig, ax = plt.subplots(figsize=(8, 8))
+        ax.imshow(mean_img, cmap='gray',
+                  vmin=np.percentile(mean_img, 2), vmax=np.percentile(mean_img, 98))
+        ax.set_title('Click 2 points along a layer boundary / landmark\n'
+                      'that should be horizontal (parallel to the layers)')
+        plt.tight_layout()
+
+        pts = plt.ginput(2, timeout=0)
+        plt.close(fig)
+
+        (x1, y1), (x2, y2) = pts
+        rotation_deg = np.degrees(np.arctan2(y2 - y1, x2 - x1))
+        print(f'Estimated FOV rotation: {rotation_deg:.2f} degrees')
+        return rotation_deg
+
+    @staticmethod
+    def rotate_fov_for_preview(mean_img, rotation_deg):
+        """
+        Rotate `mean_img` for DISPLAY ONLY, using the same convention as the
+        depth_y correction in identify_layers — after this rotation, a
+        boundary clicked at `rotation_deg` (via estimate_fov_rotation) should
+        appear horizontal. Used to visually confirm a rotation pick before
+        committing to it; never used for ROI positions, tracking, or any
+        quantitative output.
+
+        Parameters:
+        -----------
+        mean_img : numpy.ndarray
+            Mean FOV image.
+        rotation_deg : float
+            Angle from estimate_fov_rotation.
+
+        Returns:
+        --------
+        rotated : numpy.ndarray
+            De-tilted copy of mean_img, same shape.
+        """
+        from scipy.ndimage import affine_transform
+
+        theta = np.radians(rotation_deg)
+        cy = (mean_img.shape[0] - 1) / 2.0
+        cx = (mean_img.shape[1] - 1) / 2.0
+        cos_t, sin_t = np.cos(theta), np.sin(theta)
+
+        # Backward-mapping matrix (output coord -> input coord), the inverse
+        # of the point rotation used for depth_y, in (row, col) order.
+        matrix = np.array([[cos_t, sin_t],
+                            [-sin_t, cos_t]])
+        center = np.array([cy, cx])
+        offset = center - matrix @ center
+
+        return affine_transform(mean_img, matrix, offset=offset, order=1,
+                                 mode='constant', cval=0)
+
+    @staticmethod
+    def pick_layer4_peak(med_coords, FOV, density, bin_centers_density):
+        """
+        Interactively select the y-coordinate of the true L4 (densest) band,
+        for FOVs where automatic peak detection is unreliable (e.g. patchy
+        cell density with multiple local maxima). Shows the y-density curve
+        next to the FOV with all ROI positions overlaid, sharing the y-axis,
+        so the click can be placed with anatomical context.
+
+        Note: the FOV/ROI panel is always shown in raw (unrotated) pixel
+        space. If this animal also needs rotation_deg correction, the
+        y-values will still be interpreted correctly (identify_layers uses
+        whatever y you click), but the panel won't visually line up with the
+        rotated density curve — use it for a rough anatomical read, not
+        pixel-precise alignment, in that combined case.
+
+        Requires an interactive matplotlib backend (e.g. Qt5Agg) set by the
+        calling script.
+
+        Parameters:
+        -----------
+        med_coords : numpy.ndarray
+            Median coordinates of cells (cells x dimensions).
+        FOV : numpy.ndarray
+            Mean FOV image (e.g. ops['meanImg']).
+        density : numpy.ndarray
+            Cell count per y-bin (from np.histogram on the depth axis).
+        bin_centers_density : numpy.ndarray
+            Bin centers matching `density`, same units as med_coords[:, 0].
+
+        Returns:
+        --------
+        peak_y : float
+            Selected y-coordinate for the L4 peak.
+        """
+        smooth_density = gaussian_filter1d(density, sigma=1)
+
+        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 8), sharey=True)
+
+        ax1.plot(density, bin_centers_density, 'k-', alpha=0.5, label='Cell density')
+        ax1.plot(smooth_density, bin_centers_density, 'b-', linewidth=2, label='Smoothed')
+        ax1.invert_yaxis()
+        ax1.set_xlabel('Cell count')
+        ax1.set_ylabel('Y-coordinate (px)')
+        ax1.set_title('Click the L4 (densest) band')
+        ax1.legend()
+
+        ax2.imshow(FOV, cmap='gray', vmin=np.percentile(FOV, 2), vmax=np.percentile(FOV, 98))
+        ax2.scatter(med_coords[:, 1], med_coords[:, 0], s=8, alpha=0.4, c='cyan')
+        ax2.set_title('FOV with ROI positions')
+        ax2.set_xlabel('X-coordinate (px)')
+
+        plt.tight_layout()
+
+        pts = plt.ginput(1, timeout=0)
+        plt.close(fig)
+
+        peak_y = pts[0][1]
+        print(f'Manually selected L4 peak: y = {peak_y:.2f}')
+        return peak_y
+
+    @staticmethod
+    def identify_layers(med_coords, peak_density_method='auto', rotation_deg=0.0,
+                         manual_peak_y=None, FOV=None,
+                         um_per_pixel=0.947408849697405):
         """
         Identify cortical layers based on cell coordinates.
-        
+
         Parameters:
         -----------
         med_coords : numpy.ndarray
             Median coordinates of cells (cells x dimensions)
         peak_density_method : str
-            Method to identify peak density ('auto' or 'manual')
-            
+            Method to identify peak density ('auto', 'manual', or 'manual_click').
+            'manual_click' picks the L4 peak interactively (or uses
+            manual_peak_y directly if already provided).
+        um_per_pixel : float
+            Microns per pixel for THIS recording, used to convert the
+            anatomical layer thicknesses (70um L4 half-width, 150um L5
+            offset) into pixel units. Default 0.947408849697405 is the
+            regular-objective 1.15x value used historically — pass the
+            actual value for FOVs imaged at a different zoom/objective
+            (e.g. 1.08952017715202 for the V1_prism_DREADD animals), or
+            layer boundaries will be anatomically wrong.
+        rotation_deg : float
+            Anatomical tilt correction, in degrees (e.g. from
+            estimate_fov_rotation). The depth axis used for the density
+            histogram and layer boundaries is computed by rotating
+            coordinates internally by this amount; med_coords itself (and
+            therefore cell order/IDs) is never modified. Default 0 reproduces
+            the original (unrotated) behavior exactly.
+        manual_peak_y : float, optional
+            If given, used directly as the L4 peak y-coordinate (in the
+            rotated depth-axis frame) instead of auto-detection or an
+            interactive click.
+        FOV : numpy.ndarray, optional
+            Mean FOV image. Only required when peak_density_method ==
+            'manual_click' and manual_peak_y is not already provided.
+
         Returns:
         --------
         layer_cells : dict
@@ -51,50 +216,81 @@ class SpatialModulationIndexLayerSpecific:
         layer_boundaries : dict
             Dictionary with layer boundaries
         """
-        # Calculate cell density along y-axis
-        density, bins = np.histogram(med_coords[:, 0], bins=50)
+        # Compute the depth axis used for histogram/boundary math. A nonzero
+        # rotation_deg rotates coordinates about their centroid so that a
+        # tilted layer boundary becomes horizontal; med_coords itself (and
+        # thus the cell indices returned below) are left untouched.
+        if rotation_deg:
+            theta = np.radians(rotation_deg)
+            cy = np.mean(med_coords[:, 0])
+            cx = np.mean(med_coords[:, 1])
+            y0 = med_coords[:, 0] - cy
+            x0 = med_coords[:, 1] - cx
+            # Projection onto the depth axis (perpendicular to the clicked
+            # boundary line, which runs along direction (cos theta, sin
+            # theta)) — points along that line must land at equal depth_y.
+            depth_y = y0 * np.cos(theta) - x0 * np.sin(theta) + cy
+        else:
+            depth_y = med_coords[:, 0]
+
+        # Calculate cell density along the depth axis
+        density, bins = np.histogram(depth_y, bins=50)
         bin_centers_density = (bins[:-1] + bins[1:]) / 2
-        
+
         # Smooth density for more reliable peak detection
         sigma = 1
         smooth_density = gaussian_filter1d(density, sigma)
-        
-        if peak_density_method == 'auto':
+
+        if peak_density_method == 'manual_click':
+            if manual_peak_y is not None:
+                peak_density_y = manual_peak_y
+                print(f'Using provided manual peak density: y = {peak_density_y:.2f}')
+            else:
+                if FOV is None:
+                    raise ValueError("FOV image required for interactive 'manual_click' "
+                                      "peak picking (or pass manual_peak_y directly).")
+                peak_density_y = SpatialModulationIndexLayerSpecific.pick_layer4_peak(
+                    med_coords, FOV, density, bin_centers_density)
+        elif peak_density_method == 'auto':
             # Find peak density (Layer 4)
             peak_idx = np.argmax(smooth_density)
             peak_density_y = bin_centers_density[peak_idx]
             print(f'Automatically detected peak density at y = {peak_density_y:.2f}')
         else:
             # Use middle of the distribution as an estimate
-            peak_density_y = np.median(med_coords[:, 0])
+            peak_density_y = np.median(depth_y)
             print(f'Using median y-value as peak density: y = {peak_density_y:.2f}')
-        
+
         # Define layer boundaries based on distance from peak
-        
-        # for regular objective, each pixel corresponds to 1 bin and 1 bin = 0.947408849697405 um. Find bins +/- 70um away from peak_density
-        # for cousa, each pixel corresponds to 1 bin and 1 bin = 1.5076603 um. Find bins +/- 70um away from peak_density
-        um_per_bin = 0.947408849697405 # at 1.15x objective (regular)
-        # um_per_bin = 0.990472888320014 # at 1.1x objective (regular)
-        
+
+        # each pixel corresponds to 1 bin, and 1 bin = um_per_pixel um (passed
+        # in by the caller — defaults to 0.947408849697405, the regular 1.15x
+        # objective value). Find bins +/- 70um away from peak_density.
+        # Reference values for other setups seen in this project:
+        #   0.990472888320014  # 1.1x objective (regular)
+        #   1.5076603          # cousa
+        #   1.08952017715202   # V1_prism_DREADD animals
+        um_per_bin = um_per_pixel
+
         # Layer thicknesses based on mouse visual cortex anatomy
         layer4_half_width_um = 70  # μm from peak (±)
         layer4_half_width_bins = int(layer4_half_width_um / um_per_bin)
-        
+
         # Calculate layer boundaries
-        layer4_upper = peak_density_y - layer4_half_width_bins 
-        layer4_lower = peak_density_y + layer4_half_width_bins 
-        layer23_upper = np.min(med_coords[:, 0])
+        layer4_upper = peak_density_y - layer4_half_width_bins
+        layer4_lower = peak_density_y + layer4_half_width_bins
+        layer23_upper = np.min(depth_y)
         layer23_lower = layer4_upper
         layer5_upper = layer4_lower
         layer5_lower = layer4_lower + int(150 / um_per_bin)   # 150μm below L4
         layer6_upper = layer5_lower
-        layer6_lower = np.max(med_coords[:, 0])
-        
+        layer6_lower = np.max(depth_y)
+
         # Get indices of cells in each layer
-        layer23_cells = np.where((med_coords[:, 0] >= layer23_upper) & (med_coords[:, 0] < layer23_lower))[0]
-        layer4_cells = np.where((med_coords[:, 0] >= layer4_upper) & (med_coords[:, 0] < layer4_lower))[0]
-        layer5_cells = np.where((med_coords[:, 0] >= layer5_upper) & (med_coords[:, 0] < layer5_lower))[0]
-        layer6_cells = np.where(med_coords[:, 0] >= layer6_upper)[0]
+        layer23_cells = np.where((depth_y >= layer23_upper) & (depth_y < layer23_lower))[0]
+        layer4_cells = np.where((depth_y >= layer4_upper) & (depth_y < layer4_lower))[0]
+        layer5_cells = np.where((depth_y >= layer5_upper) & (depth_y < layer5_lower))[0]
+        layer6_cells = np.where(depth_y >= layer6_upper)[0]
         
         print(f'Layer 2/3: {np.size(layer23_cells)} cells in from {layer23_upper:.2f} to {layer23_lower:.2f}')
         print(f'Layer 4: {np.size(layer4_cells)} cells in from {layer4_upper:.2f} to {layer4_lower:.2f}')
@@ -118,6 +314,90 @@ class SpatialModulationIndexLayerSpecific:
         }
         
         return layer_cells, layer_boundaries
+
+    @staticmethod
+    def plot_layers_on_fov(mean_img, med_coords, layer_cells, layer_boundaries,
+                            rotation_deg=0.0, save_path=None):
+        """
+        Draw the real mean FOV with cells colored by their confirmed layer
+        assignment and the actual L2/3-L4, L4-L5, L5-L6 boundary lines
+        overlaid at the correct angle. Meant as the trustworthy final check
+        after a rotation_deg/manual_peak_y pick — unlike plot_layer_distribution
+        (which draws on a synthetic footprint map and isn't rotation-aware),
+        this uses the real anatomical image and follows the same depth_y
+        convention as identify_layers, so a tilted boundary is drawn tilted,
+        not horizontal.
+
+        Parameters:
+        -----------
+        mean_img : numpy.ndarray
+            Real mean FOV image (e.g. ops['meanImg']).
+        med_coords : numpy.ndarray
+            Median coordinates of cells (cells x dimensions).
+        layer_cells : dict
+            {layer_name: cell indices}, from identify_layers.
+        layer_boundaries : dict
+            {layer_name: (upper, lower)} in the depth_y frame, from identify_layers.
+        rotation_deg : float
+            Same rotation_deg passed to identify_layers for this session.
+        save_path : str, optional
+            If given, saves the figure there.
+
+        Returns:
+        --------
+        fig : matplotlib.figure.Figure
+        """
+        theta = np.radians(rotation_deg)
+        cy = np.mean(med_coords[:, 0])
+        cx = np.mean(med_coords[:, 1])
+        Ly, Lx = mean_img.shape
+
+        def boundary_xy(depth_value):
+            if abs(np.cos(theta)) < 1e-8:
+                return np.array([depth_value, depth_value]), np.array([0, Ly])
+            x_vals = np.array([0, Lx])
+            y_vals = cy + ((depth_value - cy) + (x_vals - cx) * np.sin(theta)) / np.cos(theta)
+            return x_vals, y_vals
+
+        fig, ax = plt.subplots(figsize=(10, 10))
+        ax.imshow(mean_img, cmap='gray',
+                  vmin=np.percentile(mean_img, 2), vmax=np.percentile(mean_img, 98))
+
+        for layer_idx, (layer_name, cell_indices) in enumerate(layer_cells.items()):
+            if len(cell_indices) == 0:
+                continue
+            color = SpatialModulationIndexLayerSpecific._get_layer_color(layer_name, layer_idx)
+            ax.scatter(med_coords[cell_indices, 1], med_coords[cell_indices, 0],
+                       s=12, alpha=0.85, color=color, label=f'{layer_name} ({len(cell_indices)} cells)')
+
+        # Only the real inter-layer transitions — not the outer L2/3 top /
+        # L6 bottom extents, which are just data min/max, not boundaries.
+        boundary_defs = []
+        if 'L4' in layer_boundaries:
+            l4_upper, l4_lower = layer_boundaries['L4']
+            boundary_defs += [('L2/3-L4', l4_upper), ('L4-L5', l4_lower)]
+        if 'L5' in layer_boundaries:
+            boundary_defs.append(('L5-L6', layer_boundaries['L5'][1]))
+
+        for label_txt, depth_value in boundary_defs:
+            x_vals, y_vals = boundary_xy(depth_value)
+            ax.plot(x_vals, y_vals, '--', color='white', linewidth=1.3, alpha=0.85)
+
+        ax.set_xlim(0, Lx)
+        ax.set_ylim(Ly, 0)
+        ax.set_title(f'Confirmed layer assignment (rotation_deg={rotation_deg:.2f})')
+        ax.legend(loc='center left', bbox_to_anchor=(1.02, 0.5), fontsize=9)
+        ax.axis('off')
+        plt.tight_layout()
+
+        if save_path:
+            save_dir = os.path.dirname(save_path)
+            if save_dir:
+                os.makedirs(save_dir, exist_ok=True)
+            plt.savefig(save_path, dpi=200, bbox_inches='tight')
+            print(f'Layer FOV figure saved to {save_path}')
+
+        return fig
 
     @staticmethod
     def identify_single_layer(med_coords, layer_name='All'):

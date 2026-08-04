@@ -1,3 +1,24 @@
+"""
+TrackROIs_SalineDCZ.py
+Fork of TrackROIs.py for sessions where the saline/DCZ conditions are two
+TSeries recorded side by side on the same day, instead of one TSeries per
+Day<N> folder (the layout TrackROIs.py assumes).
+
+e.g.
+  .../260724_JSY_JSY090_LongitudinalImaging_DREADD_Saline_DCZ_1/
+      TSeries-07242026-0809_SALINE-001/
+      TSeries-07242026-0809_DCZ-001/
+
+The only real difference from TrackROIs.py is get_session_paths(): here it
+scans TSeries-* folders directly under base_dir and labels each by the
+condition token found in its name ('SALINE'/'SAL'/'DCZ') instead of a
+Day<N> folder name. Everything downstream (alignment, ROI matching,
+filtering, manual review, saving) is unchanged — those functions only ever
+key off day_label as an arbitrary string.
+
+JSY, 2026
+"""
+
 import matplotlib
 matplotlib.use('Qt5Agg')  # Required for interactive inspection
 
@@ -22,54 +43,47 @@ from skimage.registration import phase_cross_correlation
 # CONFIGURATION
 # ============================================================
 base_dir = r"D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260724_JSY_JSY090_LongitudinalImaging_DREADD_Saline_DCZ_1"
-reference_day = 'Day2'
-required_days = [None]  # set to None to use all tracked sessions
+reference_day = 'SALINE'
+required_days = ['SALINE', 'DCZ']
 
 MICRONS_PER_PIXEL = 1.08952017715202
 
 
 # ============================================================
-# Function 1: Get session paths
+# Function 1: Get session paths — condition-suffixed TSeries folders
+# directly under base_dir (no Day<N> subfolder layer)
 # ============================================================
-def get_session_paths(base_dir):
+def get_session_paths(base_dir, condition_labels=('SALINE', 'SAL', 'DCZ')):
+    """
+    Each condition's TSeries sits directly under base_dir, e.g.
+    TSeries-..._SALINE-001, TSeries-..._DCZ-001. The day_label for each
+    session is whichever entry of `condition_labels` appears in the
+    TSeries folder name ('SAL' is normalized to 'SALINE' so 260724-style
+    _SALINE_ and 260726-style _SAL_ sessions get the same label).
+    """
     base_dir = Path(base_dir)
-
-    day_folders = [f for f in base_dir.iterdir() if f.is_dir() and 'Day' in f.name]
-
-    def get_day_number(folder):
-        match = re.search(r'Day(\d+)', folder.name)
-        return int(match.group(1)) if match else 999
-
-    day_folders = sorted(day_folders, key=get_day_number)
+    tseries_folders = sorted(base_dir.glob('TSeries-*'))
 
     session_paths = []
     day_labels = []
 
-    for day_folder in day_folders:
-        tseries_folders = list(day_folder.glob('TSeries-*'))
-
-        if len(tseries_folders) == 0:
-            print(f"WARNING: No TSeries folders found in {day_folder.name}, skipping")
+    for tseries in tseries_folders:
+        label = None
+        for cand in condition_labels:
+            if cand in tseries.name.upper():
+                label = 'SALINE' if cand == 'SAL' else cand
+                break
+        if label is None:
+            print(f"WARNING: Could not determine condition label for {tseries.name}, skipping")
             continue
 
-        def get_tseries_number(folder):
-            match = re.search(r'-(\d+)$', folder.name)
-            return int(match.group(1)) if match else 999
-
-        tseries_folders = sorted(tseries_folders, key=get_tseries_number)
-
-        found = False
-        for tseries in tseries_folders:
-            plane0_path = tseries / 'suite2p' / 'plane0'
-            if plane0_path.exists():
-                session_paths.append(plane0_path)
-                day_labels.append(f"Day{get_day_number(day_folder)}")
-                print(f"Found: {day_folder.name} -> {tseries.name}")
-                found = True
-                break
-
-        if not found:
-            print(f"WARNING: No suite2p/plane0 found in any TSeries in {day_folder.name}")
+        plane0_path = tseries / 'suite2p' / 'plane0'
+        if plane0_path.exists():
+            session_paths.append(plane0_path)
+            day_labels.append(label)
+            print(f"Found: {tseries.name} -> label '{label}'")
+        else:
+            print(f"WARNING: No suite2p/plane0 found in {tseries.name}, skipping")
 
     print(f"\nTotal sessions found: {len(session_paths)}")
     return session_paths, day_labels
@@ -174,7 +188,7 @@ def save_mean_images(all_sessions, save_path):
 # ============================================================
 # Function 1: Align FOVs to a reference
 # ============================================================
-def align_fovs(all_sessions, reference_day='Day2'):
+def align_fovs(all_sessions, reference_day='SALINE'):
     ref_idx = None
     for i, session in enumerate(all_sessions):
         if session['day_label'] == reference_day:
@@ -236,7 +250,7 @@ def apply_shifts(all_sessions, shifts):
 # ============================================================
 # Function 3: Visualize alignment quality
 # ============================================================
-def visualize_alignment(all_sessions, reference_day='Day2', save_path=None):
+def visualize_alignment(all_sessions, reference_day='SALINE', save_path=None):
     ref_session = None
     for session in all_sessions:
         if session['day_label'] == reference_day:
@@ -414,7 +428,7 @@ def match_rois_pairwise(session_a, session_b, shifts,
 # ============================================================
 # Function 4: Match all sessions against reference
 # ============================================================
-def match_across_all_sessions(all_sessions, shifts, reference_day='Day2',
+def match_across_all_sessions(all_sessions, shifts, reference_day='SALINE',
                                max_distance_um=15.0, min_correlation=0.3):
     ref_session = None
     ref_idx = None
@@ -474,7 +488,7 @@ def match_across_all_sessions(all_sessions, shifts, reference_day='Day2',
 # ============================================================
 # Function 5: Plot match quality
 # ============================================================
-def plot_match_quality(all_matches, reference_day='Day2', save_path=None):
+def plot_match_quality(all_matches, reference_day='SALINE', save_path=None):
     n_other = len(all_matches)
     fig, axes = plt.subplots(n_other, 2, figsize=(10, 3 * n_other))
     if n_other == 1:

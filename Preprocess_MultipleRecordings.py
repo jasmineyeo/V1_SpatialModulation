@@ -763,15 +763,15 @@ if __name__ == "__main__":
     #                   vr_path='...' →  explicit path (use when VRlog is in a
     #                                    separate folder, as with older sessions).
 
-    BASE = r'F:\2P\unprocessed'
+    BASE = r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260728_JSY_JSY090_LongitudinalImaging_DREADD_Saline_DCZ_3'
 
     sessions = [
         # --- Day 2 ---
         {
-            'suite2p_path': rf'{BASE}\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-001',
+            'suite2p_path': rf'{BASE}\TSeries-07282026-0811_DCZ-001',
             'recording_pairs': [
-                (rf'{BASE}\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-001', None),
-                (rf'{BASE}\251012_JSY_JSY052_SpatialModulation_Day4\TSeries-10122025-1212-002', None),
+                (rf'{BASE}\TSeries-07282026-0811_DCZ-001', None),
+                (rf'{BASE}\TSeries-07282026-0811_DCZ-002', None),
             ]
         },
         # Add further days following the same pattern above.

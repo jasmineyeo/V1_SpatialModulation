@@ -263,7 +263,11 @@ def Run_SMI_Layer_Analysis(data_filepath,
                            exclude_end_cm=10,
                            smoothing_sigma=1.0,
                            save_figures=True,
-                           verbose=True):
+                           verbose=True,
+                           rotation_deg=0.0,
+                           peak_density_method='auto',
+                           manual_peak_y=None,
+                           um_per_pixel=0.947408849697405):
     """
     Run the complete SMI layer-specific analysis for one recording folder.
 
@@ -291,6 +295,28 @@ def Run_SMI_Layer_Analysis(data_filepath,
         Save visualization figures (keeps current structure when True).
     verbose : bool
         Print progress messages.
+    rotation_deg : float
+        Only used when recording_type == 'prism'. Anatomical tilt correction
+        (degrees) passed through to identify_layers — corrects for a FOV
+        that isn't parallel to the cortical layers. Default 0 reproduces the
+        original (unrotated) behavior exactly. See
+        SpatialModulationIndexLayerSpecific.estimate_fov_rotation.
+    peak_density_method : str
+        Only used when recording_type == 'prism'. 'auto' (default) keeps the
+        original argmax-based L4 detection. 'manual_click' pops up an
+        interactive picker (or uses manual_peak_y directly if provided) —
+        use for FOVs with patchy density where auto-detection is unreliable.
+    manual_peak_y : float, optional
+        Only used when recording_type == 'prism' and peak_density_method ==
+        'manual_click'. Pre-selected L4 peak y-coordinate (in the rotated
+        depth-axis frame), skipping the interactive prompt.
+    um_per_pixel : float
+        Only used when recording_type == 'prism'. Microns per pixel for this
+        recording, passed through to identify_layers() to convert the 70um/
+        150um anatomical layer thicknesses into pixels. Default
+        0.947408849697405 (1.15x objective) reproduces the original
+        behavior exactly — override for FOVs imaged at a different zoom
+        (e.g. 1.08952017715202 for the V1_prism_DREADD animals).
 
     Returns
     -------
@@ -347,10 +373,17 @@ def Run_SMI_Layer_Analysis(data_filepath,
         twop_dict = raw_twop_data.calc_dFF()
 
         med_coords = np.array([cell['med'] for cell in twop_dict['stat']])
+        mean_img = twop_dict['ops']['meanImg']
         if recording_type == 'window':
             layer_cells, layer_boundaries = SMI_Layer.identify_single_layer(med_coords)
         else:
-            layer_cells, layer_boundaries = SMI_Layer.identify_layers(med_coords)
+            if rotation_deg or peak_density_method != 'auto':
+                print(f"  Using rotation_deg={rotation_deg}, "
+                      f"peak_density_method='{peak_density_method}'")
+            layer_cells, layer_boundaries = SMI_Layer.identify_layers(
+                med_coords, peak_density_method=peak_density_method,
+                rotation_deg=rotation_deg, manual_peak_y=manual_peak_y, FOV=mean_img,
+                um_per_pixel=um_per_pixel)
 
         # STEP 3: APPLY ONSET FILTERING
         if verbose:
@@ -444,7 +477,10 @@ def Run_SMI_Layer_Analysis(data_filepath,
             'exclude_end_cm': exclude_end_cm,
             'smoothing_sigma': smoothing_sigma,
             'n_trials': n_trials,
-            'n_bins': n_bins
+            'n_bins': n_bins,
+            'rotation_deg': rotation_deg,
+            'peak_density_method': peak_density_method,
+            'manual_peak_y': manual_peak_y,
         }
 
         h5_save_path = os.path.join(data_filepath, f"{animal_id}_{session_id}_smi_results.h5")
