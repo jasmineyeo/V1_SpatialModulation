@@ -551,38 +551,48 @@ if __name__ == "__main__":
     
     # Each entry is either a bare path (defaults to area='V1') or a (path, area) tuple,
     # where area is 'V1' or 'RSC' — see preprocess_2pVR docstring.
-    # twop_filepaths = [
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260719_JSY_JSY090_LongitudinalImaging_DREADD_Day1\TSeries-07192026-0941-001',
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260720_JSY_JSY090_LongitudinalImaging_DREADD_Day2\TSeries-07202026-1009-001',
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260721_JSY_JSY090_LongitudinalImaging_DREADD_Day3\TSeries-07212026-0907-001',
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260722_JSY_JSY090_LongitudinalImaging_DREADD_Day4\TSeries-07222026-0959-001',
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260722_JSY_JSY090_LongitudinalImaging_DREADD_Day4\TSeries-07222026-1831-002',
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260723_JSY_JSY090_LongitudinalImaging_DREADD_Day5\TSeries-07232026-0843-001',
-        
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260719_JSY_JSY093_LongitudinalImaging_DREADD_Day1\TSeries-07192026-0941-001',
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260720_JSY_JSY093_LongitudinalImaging_DREADD_Day2\TSeries-07202026-1009-001',
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260721_JSY_JSY093_LongitudinalImaging_DREADD_Day3\TSeries-07212026-0907-001',
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260722_JSY_JSY093_LongitudinalImaging_DREADD_Day4\TSeries-07222026-0959-001',
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260723_JSY_JSY093_LongitudinalImaging_DREADD_Day5\TSeries-07232026-0843-001'
-    # ]
-    
+
     twop_filepaths = [
-        # r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260724_JSY_JSY093_LongitudinalImaging_DREADD_Saline_DCZ_1\TSeries-07242026-0809_DCZ-001',
-        # r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260724_JSY_JSY093_LongitudinalImaging_DREADD_Saline_DCZ_1\TSeries-07242026-0809_SALINE-001'
-        # r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260726_JSY_JSY093_LongitudinalImaging_DREADD_Saline_DCZ_2\TSeries-07262026-0755_DCZ-001',
-        # r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260726_JSY_JSY093_LongitudinalImaging_DREADD_Saline_DCZ_2\TSeries-07262026-0755-001',
-        # r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260728_JSY_JSY093_LongitudinalImaging_DREADD_Saline_DCZ_3\TSeries-07282026-0811_DCZ-001',
-        # r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260728_JSY_JSY093_LongitudinalImaging_DREADD_Saline_DCZ_3\TSeries-07282026-0811_SAL-001'
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260719_JSY_JSY090_LongitudinalImaging_DREADD_Day1\TSeries-07192026-0941-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260720_JSY_JSY090_LongitudinalImaging_DREADD_Day2\TSeries-07202026-1009-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260721_JSY_JSY090_LongitudinalImaging_DREADD_Day3\TSeries-07212026-0907-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260722_JSY_JSY090_LongitudinalImaging_DREADD_Day4\TSeries-07222026-1831-002',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260723_JSY_JSY090_LongitudinalImaging_DREADD_Day5\TSeries-07232026-0843-001',
+        
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260724_JSY_JSY090_LongitudinalImaging_DREADD_Saline_DCZ_1\TSeries-07242026-0809_DCZ-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260724_JSY_JSY090_LongitudinalImaging_DREADD_Saline_DCZ_1\TSeries-07242026-0809_SALINE-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260726_JSY_JSY090_LongitudinalImaging_DREADD_Saline_DCZ_2\TSeries-07262026-0755_SAL-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260726_JSY_JSY090_LongitudinalImaging_DREADD_Saline_DCZ_2\TSeries-07262026-0755_DCZ-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260728_JSY_JSY090_LongitudinalImaging_DREADD_Saline_DCZ_3\TSeries-07282026-0811_SAL-001',
+        ## dcz3 dcz recordings processed in the preprocess_multiplerecordings.py
+        
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260730_JSY_JSY090_LongitudinalImaging_DREADD_ActiveOpenLoop_Saline_DCZ\TSeries-07302026-0844_SAL-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260730_JSY_JSY090_LongitudinalImaging_DREADD_ActiveOpenLoop_Saline_DCZ\TSeries-07302026-0844_DCZ-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260801_JSY_JSY090_LongitudinalImaging_DREADD_StationaryOpenLoop_Saline_DCZ\TSeries-08012026-0815_sal-002',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260801_JSY_JSY090_LongitudinalImaging_DREADD_StationaryOpenLoop_Saline_DCZ\TSeries-08012026-0815_DCZ-001',
+        
+        
+        
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260719_JSY_JSY093_LongitudinalImaging_DREADD_Day1\TSeries-07192026-0941-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260720_JSY_JSY093_LongitudinalImaging_DREADD_Day2\TSeries-07202026-1009-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260721_JSY_JSY093_LongitudinalImaging_DREADD_Day3\TSeries-07212026-0907-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260722_JSY_JSY093_LongitudinalImaging_DREADD_Day4\TSeries-07222026-0959-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260723_JSY_JSY093_LongitudinalImaging_DREADD_Day5\TSeries-07232026-0843-001',
+        
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260724_JSY_JSY093_LongitudinalImaging_DREADD_Saline_DCZ_1\TSeries-07242026-0809_DCZ-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260724_JSY_JSY093_LongitudinalImaging_DREADD_Saline_DCZ_1\TSeries-07242026-0809_SALINE-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260726_JSY_JSY093_LongitudinalImaging_DREADD_Saline_DCZ_2\TSeries-07262026-0755_DCZ-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260726_JSY_JSY093_LongitudinalImaging_DREADD_Saline_DCZ_2\TSeries-07262026-0755-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260728_JSY_JSY093_LongitudinalImaging_DREADD_Saline_DCZ_3\TSeries-07282026-0811_DCZ-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260728_JSY_JSY093_LongitudinalImaging_DREADD_Saline_DCZ_3\TSeries-07282026-0811_SAL-001',
+        
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260730_JSY_JSY093_LongitudinalImaging_DREADD_ActiveOpenLoop_Saline_DCZ\TSeries-07302026-0844_SAL-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260730_JSY_JSY093_LongitudinalImaging_DREADD_ActiveOpenLoop_Saline_DCZ\TSeries-07302026-0844_DCZ-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260801_JSY_JSY093_LongitudinalImaging_DREADD_StationaryOpenLoop_Saline_DCZ\TSeries-08012026-0815_sal-001',
+        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY093_V1prism_DREADD\260801_JSY_JSY093_LongitudinalImaging_DREADD_StationaryOpenLoop_Saline_DCZ\TSeries-08012026-0815_dcz-001',
+
     ]
     
-    twop_filepaths = [
-        r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260722_JSY_JSY090_LongitudinalImaging_DREADD_Day4\TSeries-07222026-1831-002',
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260723_JSY_JSY090_LongitudinalImaging_DREADD_Day5\TSeries-07232026-0843-001',
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260724_JSY_JSY090_LongitudinalImaging_DREADD_Saline_DCZ_1\TSeries-07242026-0809_DCZ-001',
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260724_JSY_JSY090_LongitudinalImaging_DREADD_Saline_DCZ_1\TSeries-07242026-0809_SALINE-001',
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260726_JSY_JSY090_LongitudinalImaging_DREADD_Saline_DCZ_2\TSeries-07262026-0755_SAL-001',
-    #     r'D:\V1_SpatialModulation\2p\V1_prism_DREADD\JSY090_V1prism_DREADD\260726_JSY_JSY090_LongitudinalImaging_DREADD_Saline_DCZ_2\TSeries-07262026-0755_DCZ-001',
-    ]    
     # twop_filepaths = [
     #     (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260623_JSY_JSY077_SpMod_RSCSomatic_Day1\TSeries-06232026-2049-001', 'RSC'),
     #     (r'D:\V1_SpatialModulation\2p\RSC_somatic_V1projecting\JSY077_ChronicImaging_RSCSomatic\260624_JSY_JSY077_SpMod_RSCSomatic_Day2\TSeries-06242026-2059-001', 'RSC'),

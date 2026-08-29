@@ -257,6 +257,22 @@ def _align_segment(neural_spks_segment, neural_abs_timestamps, vr_data):
             dt = dt - datetime.timedelta(hours=12)
 
         vr_abs_t.append(dt)
+
+    # Fix sessions that cross noon: the per-timestamp AM/PM correction above
+    # can flip 12:xx PM entries back to 00:xx AM, breaking monotonicity.
+    # If any step jumps by more than 6 hours, correct that entry and all
+    # subsequent ones (same fix as dataLoader.align_data()).
+    for i in range(1, len(vr_abs_t)):
+        delta = (vr_abs_t[i] - vr_abs_t[i - 1]).total_seconds()
+        if delta < -6 * 3600:
+            for j in range(i, len(vr_abs_t)):
+                vr_abs_t[j] = vr_abs_t[j] + datetime.timedelta(hours=12)
+            break
+        elif delta > 6 * 3600:
+            for j in range(i, len(vr_abs_t)):
+                vr_abs_t[j] = vr_abs_t[j] - datetime.timedelta(hours=12)
+            break
+
     vr_abs_t = np.array(vr_abs_t)
 
     # --- Build relative time axes (seconds from respective t=0) ---

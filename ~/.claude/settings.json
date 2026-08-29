@@ -1,0 +1,11 @@
+{
+  "hooks": {
+    "Stop": [
+      {
+        "type": "command",
+        "command": "curl -s -d 'Claude finished processing!' ntfy.sh/my_secret_claude_ping_99",
+        "async": true
+      }
+    ]
+  }
+}
