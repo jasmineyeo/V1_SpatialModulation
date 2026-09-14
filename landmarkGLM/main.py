@@ -7,7 +7,9 @@ DMM, Aug 2026
 
 import os
 import numpy as np
+import argparse
 import scipy.stats
+from glob import glob
 
 from config import Config
 from load_data import load_suite2p, load_vrlog
@@ -317,18 +319,39 @@ def main(SUITE2P, VRLOG, OUTDIR):
 
 if __name__ == '__main__':
 
-    SUITE2P = "/home/dylan/Fast1/jasmine_glm/251105_JSY_JSY054_SpMod_Day7/suite2p/plane0"
-    VRLOG   = "/home/dylan/Fast1/jasmine_glm/251105_JSY_JSY054_SpMod_Day7/VRlog_JSY054_11052025_03-36-34_forSharing.txt"
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-s2p', '--suite2p_dir', type=str, default=None,
+                        help='Path to suite2p directory')
+    parser.add_argument('-vr', '--vrlog_file', type=str, default=None,
+                        help='Path to VR log file')
+    parser.add_argument('-b', '--batch', action='store_true', help='Run in batch mode')
+    parser.add_argument('bd', '--batch_dir', type=str, default=None, help='Directory for batch recordings')
+    args = parser.parse_args()
 
-    if SUITE2P is None:
-        SUITE2P = select_directory('Select suite2p plane directory.')
-    if VRLOG is None:
-        VRLOG = select_file('Select VR log text file.', filetypes=[('TXT', '*.txt'),])
-        
-    outdir = os.path.split(VRLOG)[0]
-    if outdir == '':
-        outdir = os.getcwd()
 
-    main(SUITE2P, VRLOG, outdir)
+    if not args.batch:
 
-    
+        if args.suite2p_dir is None:
+            SUITE2P = select_directory('Select suite2p plane directory.')
+        else:
+            SUITE2P = args.suite2p_dir
+        if args.vrlog_file is None:
+            VRLOG = select_file('Select VR log text file.', filetypes=[('TXT', '*.txt'),])
+        else:
+            VRLOG = args.vrlog_file
+            
+        outdir = os.path.split(VRLOG)[0]
+        if outdir == '':
+            outdir = os.getcwd()
+
+        main(SUITE2P, VRLOG, outdir)
+
+    elif args.batch:
+
+        bdir = args.batch_dir
+        logfiles = glob('VRlog_JSY*.txt', bdir)
+        for i, logfile in enumerate(logfiles):
+            logbase = os.path.split(logfile)[0]
+            suite2p_dir = os.path.join(logbase, 'suite2p/plane0')
+
+            main(suite2p_dir, logfile, logbase)
