@@ -19,7 +19,7 @@ from glm import _pick_lambda_PB, PoissonFold, _glm_pred, set_backend
 from build_landmark_gains import build_landmark_gains
 from fit_landmark_gains import fit_landmark_gains
 from template_matching import build_shapes, fit_shapes
-from plots import plot_review_pdf
+from plots import _compute_display_curves, plot_review_pdf, plot_excluded_pdf
 from gui_funcs import select_directory, select_file
 
 
@@ -238,38 +238,14 @@ def main(SUITE2P, VRLOG, OUTDIR):
         amp_onset=_amp_on, amp_reward=_amp_rw, amp_landmark=_amp_lm
     )
 
-    def rel_report(cells, labels=None):
-
-        for i, cc in enumerate(cells):
-            cc = int(cc)
-            lb = "" if labels is None else str(labels[i])[:22]
-            _p = rel_p[cc]
-            _ps = ("<{:.1e}".format(1.0 / max(_nn, 1)) if _p <= 1.0 / max(_nn, 1)
-                   else "{:.1e}".format(_p))
-            
-
-    for _c in (108.0, 112.0, 116.0, 120.0, 123.0):
-        _mb = (_rel_inzone & (_rel_ctr >= REL_ONSET_CM) & (_rel_ctr <= _c))
-        _rr = np.nanmean(np.stack([_pairwise_corr(
-            _rel_curve(_rel_Y, np.isin(_rel_lap, _p[:len(_p) // 2]) & _rel_use),
-            _rel_curve(_rel_Y, np.isin(_rel_lap, _p[len(_p) // 2:]) & _rel_use), _mb)
-            for _p in [np.random.default_rng(7 + _k).permutation(_rel_laps)
-                       for _k in range(5)]]), axis=0)
-        _n = int(np.sum(np.nan_to_num(_rr, nan=-np.inf) >= REL_MIN_R))
-
-
     print(" -> Fitting per-landmark gains...")
     lgain_fam = build_landmark_gains(beh, cfg, lagB)
     lad = fit_landmark_gains(Y_rate, beh, cfg, XPB, cand, lgain_fam, lagB,
                              scalePB=penPB)
 
-    # LOG GAIN
-    GAIN_MIN = 0.35
-
-    _gmax = np.nanmax(lad["gain"] * lad["sgn"][None, :], axis=0)
     _wf_kernel = ((np.asarray(lad["landmark_gains"], float) > cfg.r2_threshold)
                   & np.asarray(rel["ok"], bool))
-    _wf = _wf_kernel & (np.nan_to_num(_gmax, nan=-np.inf) >= GAIN_MIN)
+    _wf = _wf_kernel
 
     SHAPE_NAMES = ["four equal peaks"] + ["L{} preference".format(j + 1)
                                           for j in range(4)]
@@ -278,7 +254,9 @@ def main(SUITE2P, VRLOG, OUTDIR):
 
 
     print(" -> Building and fitting shape templates...")
-    shp_fam = build_shapes(beh, cfg, lagB, XPB=XPB)
+    # shape contrasts are orthogonalized against behavior only if it's in the model
+    shp_fam = build_shapes(beh, cfg, lagB,
+                           XPB=XPB if cfg.use_pure_behavior else None)
     shp = fit_shapes(Y_rate, beh, cfg, XPB, shp_fam, scalePB=penPB,
                      LADDER_LAMBDAS=LADDER_LAMBDAS)
 
@@ -307,12 +285,22 @@ def main(SUITE2P, VRLOG, OUTDIR):
                   float(np.nanpercentile(_pr, 75))))
 
 
-    print(" -> Generating review PDF...")
+    # one pure-behavior refit feeds both PDFs
+    print(" -> Computing display tuning curves...")
+    curves = _compute_display_curves(beh, Y_rate, XPB, cfg, scalePB=penPB)
+
+    print(" -> Generating PDF of good cells...")
     plot_review_pdf(
-        lad=lad, shp=shp, rel=rel, cfg=cfg,
-        beh=beh, XPB=XPB, Y=Y_rate, cell_ids=cell_ids, outdir=OUTDIR,
-        wf=_wf, wf_kernel=_wf_kernel, scalePB=penPB,
-        gain_min=GAIN_MIN, shape_names=SHAPE_NAMES,
+        lad=lad, shp=shp, rel=rel, cfg=cfg, cell_ids=cell_ids, outdir=OUTDIR,
+        wf=_wf, wf_kernel=_wf_kernel, curves=curves,
+        shape_names=SHAPE_NAMES,
+        edge_cm=REL_REWARD_CM, start_cm=REL_ONSET_CM, reward_cm=REWARD_CM
+    )
+
+    print(" -> Generating PDF of excluded cells...")
+    plot_excluded_pdf(
+        lad=lad, rel=rel, cfg=cfg, cell_ids=cell_ids, outdir=OUTDIR,
+        wf=_wf, curves=curves,
         edge_cm=REL_REWARD_CM, start_cm=REL_ONSET_CM, reward_cm=REWARD_CM
     )
 
@@ -325,7 +313,7 @@ if __name__ == '__main__':
     parser.add_argument('-vr', '--vrlog_file', type=str, default=None,
                         help='Path to VR log file')
     parser.add_argument('-b', '--batch', action='store_true', help='Run in batch mode')
-    parser.add_argument('bd', '--batch_dir', type=str, default=None, help='Directory for batch recordings')
+    parser.add_argument('-bd', '--batch_dir', type=str, default=None, help='Directory for batch recordings')
     args = parser.parse_args()
 
 
@@ -349,7 +337,7 @@ if __name__ == '__main__':
     elif args.batch:
 
         bdir = args.batch_dir
-        logfiles = glob('VRlog_JSY*.txt', bdir)
+        logfiles = glob(os.path.join(bdir, '*/*.txt'), recursive=True)
         for i, logfile in enumerate(logfiles):
             logbase = os.path.split(logfile)[0]
             suite2p_dir = os.path.join(logbase, 'suite2p/plane0')

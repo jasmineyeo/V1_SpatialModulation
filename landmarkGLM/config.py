@@ -41,6 +41,8 @@ class Config:
 
     glm_backend = "auto"
 
+    use_pure_behavior = False
+
     # lag basis
     lag_max_s = 2.0
     n_lag_basis = 7

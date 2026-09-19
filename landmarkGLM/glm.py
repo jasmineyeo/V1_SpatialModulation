@@ -741,6 +741,22 @@ def _pick_lambda_PB(XPBr, Yr, tr, lap_r, cfg, scale=None):
     return float(blam)
 
 
+def behavior_offset(XPBr, Yr, tr, lap_r, cfg, scale=None):
+    """ Log-rate offset from the pure-behavior model
+
+    Every model builds ontop of it.
+    ...when pure behavior is switched off, this is all zeros
+    """
+
+    if not getattr(cfg, "use_pure_behavior", True):
+        return np.zeros(np.shape(Yr))
+
+    one = np.ones(XPBr.shape[1]) if scale is None else np.asarray(scale, float)
+    lam = _pick_lambda_PB(XPBr, Yr, tr, lap_r, cfg, scale=one)
+
+    return next(PoissonFold(XPBr[tr], Yr[tr]).eta(XPBr, one, [lam]))
+
+
 def compare_kernels(Y, beh, cfg, XPB, cand, scalePB=None, reliable=None):
 
     _span = fit_span_mask(beh, cfg)
@@ -748,9 +764,7 @@ def compare_kernels(Y, beh, cfg, XPB, cand, scalePB=None, reliable=None):
     _lo, _hi = fit_span(cfg)
     Yr = np.asarray(Y, np.float64)[rm]
     if np.any(Yr < 0):
-        raise ValueError("Poisson GLM needs a non-negative target; got negatives. "
-                         "Use cfg.zone_target='spks' and main.prep's rate scaling, "
-                         "not a z-scored trace.")
+        raise ValueError("Poisson GLM needs a non-negative target")
     XPBr = XPB[rm]
     lap_r = beh["lap_id"][rm]
     laps = np.unique(lap_r[lap_r >= 0])
@@ -783,10 +797,7 @@ def compare_kernels(Y, beh, cfg, XPB, cand, scalePB=None, reliable=None):
         if tr.sum() < 500 or te.sum() < 50:
             continue
 
-        lamPB = _pick_lambda_PB(XPBr, Yr, tr, lap_r, cfg, scale=onePB)
-        pf = PoissonFold(XPBr[tr], Yr[tr])
-
-        OFF = next(pf.eta(XPBr, onePB, [lamPB]))
+        OFF = behavior_offset(XPBr, Yr, tr, lap_r, cfg, scale=onePB)
 
         tl = np.unique(lap_r[tr])
         nv = max(1, len(tl) // cfg.n_inner_folds)

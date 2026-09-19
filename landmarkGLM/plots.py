@@ -8,6 +8,7 @@ DMM, Aug 2026
 import os
 import warnings
 
+from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -62,11 +63,13 @@ def _compute_display_curves(beh, Y, XPB, cfg, scalePB=None, bin_cm=3.0):
     onePB  = (np.ones(XPB.shape[1]) if scalePB is None
               else np.asarray(scalePB, float))
 
-    lam  = _pick_lambda_PB(XPB[rm], Y[rm],
-                           np.ones(rm.sum(), dtype=bool), lap_r, cfg,
-                           scale=onePB)
-
-    MU   = next(PoissonFold(XPB[rm], Y[rm]).predict(XPB, onePB, [lam]))
+    if getattr(cfg, "use_pure_behavior", True):
+        lam  = _pick_lambda_PB(XPB[rm], Y[rm],
+                               np.ones(rm.sum(), dtype=bool), lap_r, cfg,
+                               scale=onePB)
+        MU   = next(PoissonFold(XPB[rm], Y[rm]).predict(XPB, onePB, [lam]))
+    else:
+        MU   = np.broadcast_to(Y[rm].mean(axis=0), Y.shape)
     R    = Y - MU
 
     edges = np.arange(0.0, cfg.corridor_cm + bin_cm, bin_cm)
@@ -243,10 +246,106 @@ def plot_fig3c(km, tx, cfg, cand, outdir, fig3_helpers,
     print("  -> Wrote {} ({} cells, {} pages).".format(
         pdf_path, len(cells), n_pages))
 
-def plot_review_pdf(lad, shp, rel, cfg, beh, XPB, Y, cell_ids, outdir,
-                   wf, wf_kernel, scalePB=None,
-                   gain_min=0.15, shape_names=None,
-                   edge_cm=124.5, start_cm=9.0, reward_cm=134.4, bin_cm=3.0):
+def _draw_trace(a, cfg, xcm, raw, raw_se, color, edge_cm, start_cm, reward_cm):
+
+    for zl, zh in cfg.zones:
+        a.axvspan(zl, zh, color="#f2c14e", alpha=.25, lw=0)
+    a.axvline(edge_cm,  color="#1f4e79", lw=.8, ls=":")
+    a.axvline(start_cm, color="#1f4e79", lw=.8, ls=":")
+    a.axvline(reward_cm, color="#7d3c98", lw=.8, ls="--")
+
+    a.fill_between(xcm, raw - raw_se, raw + raw_se, color=color, alpha=.30, lw=0)
+    a.plot(xcm, raw, color=color, lw=1.3, label="raw")
+
+    top = np.nanmax(raw + raw_se)
+    a.set_ylim(0.0, float(top) * 1.10 if np.isfinite(top) and top > 0 else 1.0)
+    a.set_xlim(0.0, max(cfg.corridor_cm, reward_cm) + 1.5)
+    a.tick_params(labelsize=5, length=2)
+
+
+EXCLUDED_ROWS = 6
+EXCLUDED_COLS = 2
+
+EXCLUSION_REASONS = ["unreliable + poorly fit", "unreliable", "poorly fit"]
+EXCLUSION_COLORS = {
+    "unreliable + poorly fit": "#7f1d1d",
+    "unreliable": "#c0392b",
+    "poorly fit": "#d68910",
+}
+
+
+def exclusion_reasons(rel, lad, cfg, wf):
+
+    reliable = np.asarray(rel["ok"], bool)
+    fit_ok = np.asarray(lad["landmark_gains"], float) > cfg.r2_threshold
+
+    kept = reliable & fit_ok
+    if not np.array_equal(kept, np.asarray(wf, bool)):
+        raise RuntimeError("Exclusion rule no longer matches main.py well_fit "
+                           "({} vs {} kept) -- update exclusion_reasons.".format(
+                               int(kept.sum()), int(np.sum(wf))))
+
+    reasons = np.full(len(kept), "", dtype=object)
+    reasons[~reliable & ~fit_ok] = "unreliable + poorly fit"
+    reasons[~reliable & fit_ok] = "unreliable"
+    reasons[reliable & ~fit_ok] = "poorly fit"
+
+    return reasons
+
+
+def plot_excluded_pdf(lad, rel, cfg, cell_ids, outdir, wf, curves,
+                      edge_cm=124.5, start_cm=9.0, reward_cm=134.4):
+
+    xcm, CU, CU_se, RAW, RAW_se = curves[:5]
+    reasons = exclusion_reasons(rel, lad, cfg, wf)
+    excluded = np.flatnonzero(reasons != "")
+
+    rank = {r: i for i, r in enumerate(EXCLUSION_REASONS)}
+    r_rel = np.nan_to_num(np.asarray(rel["r"], float), nan=-np.inf)
+    order = sorted(excluded, key=lambda c: (rank[reasons[c]], -r_rel[c]))
+
+    counts = {r: int(np.sum(reasons == r)) for r in EXCLUSION_REASONS}
+    summary = "  |  ".join("{} {}".format(r, counts[r]) for r in EXCLUSION_REASONS)
+    per_page = EXCLUDED_ROWS * EXCLUDED_COLS
+    n_pages = int(np.ceil(len(order) / per_page))
+    pdf_path = os.path.join(outdir, "v09_excluded_cells.pdf")
+    r2_fit = np.asarray(lad["landmark_gains"], float)
+
+    with PdfPages(pdf_path) as pdf:
+        for pg in tqdm(range(n_pages)):
+            sel = order[pg * per_page:(pg + 1) * per_page]
+            fig, axs = plt.subplots(EXCLUDED_ROWS, EXCLUDED_COLS,
+                                    figsize=(8.5, 11.0), squeeze=False)
+            fig.subplots_adjust(left=.07, right=.98, top=.93, bottom=.04,
+                                hspace=.62, wspace=.18)
+
+            for k in range(per_page):
+                a = axs[k // EXCLUDED_COLS, k % EXCLUDED_COLS]
+                if k >= len(sel):
+                    a.set_visible(False)
+                    continue
+                i = sel[k]
+                _draw_trace(a, cfg, xcm, RAW[:, i], RAW_se[:, i], "0.15",
+                            edge_cm, start_cm, reward_cm)
+                if k % EXCLUDED_COLS == 0:
+                    a.set_ylabel("rate", fontsize=6)
+                if k // EXCLUDED_COLS == EXCLUDED_ROWS - 1 or k + EXCLUDED_COLS >= len(sel):
+                    a.set_xlabel("position (cm)", fontsize=6)
+                a.set_title("#{}  {}   rel r {:.2f}   fit R$^2$ {:+.3f}".format(
+                    int(cell_ids[i]), reasons[i], rel["r"][i], r2_fit[i]),
+                    fontsize=6.5, color=EXCLUSION_COLORS[reasons[i]], loc="left")
+
+            pdf.savefig(fig)
+            plt.close(fig)
+
+    print("  -> Wrote {} ({} excluded cells on {} pages: {})".format(
+        pdf_path, len(order), n_pages, summary))
+
+    return pdf_path
+
+
+def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
+                    shape_names=None, edge_cm=124.5, start_cm=9.0, reward_cm=134.4):
 
     if shape_names is None:
         shape_names = SHAPE_NAMES_DEFAULT
@@ -256,10 +355,8 @@ def plot_review_pdf(lad, shp, rel, cfg, beh, XPB, Y, cell_ids, outdir,
     REWARD_CM = reward_cm
     ROWS      = 6
 
-    print("  -> Computing display tuning curves...")
     (_xcm, _CU, _CU_se, _RAW, _RAW_se,
-     _pk, _pk_bin, _gpk_bin, _ZN, _PB, _SPD) = _compute_display_curves(
-        beh, Y, XPB, cfg, scalePB=scalePB, bin_cm=bin_cm)
+     _pk, _pk_bin, _gpk_bin, _ZN, _PB, _SPD) = curves
 
     _gmax = np.nanmax(lad["gain"] * lad["sgn"][None, :], axis=0)
 
@@ -458,7 +555,7 @@ def plot_review_pdf(lad, shp, rel, cfg, beh, XPB, Y, cell_ids, outdir,
 
     with PdfPages(_PDF) as pdf:
         _np = int(np.ceil(_order.size / ROWS))
-        for pg in range(_np):
+        for pg in tqdm(range(_np)):
             sel = _order[pg * ROWS:(pg + 1) * ROWS]
             fig = plt.figure(figsize=(8.5, 11.0))
             gs  = fig.add_gridspec(ROWS, 3,
@@ -468,45 +565,18 @@ def plot_review_pdf(lad, shp, rel, cfg, beh, XPB, Y, cell_ids, outdir,
                                    hspace=.55, wspace=.30)
             for r, i in enumerate(sel):
                 a = fig.add_subplot(gs[r, 0])
-                for _zl, _zh in cfg.zones:
-                    a.axvspan(_zl, _zh, color="#f2c14e", alpha=.25, lw=0)
-                a.axhline(0, color="0.55", lw=.6)
-                a.axvline(EDGE_CM,  color="#1f4e79", lw=.8, ls=":")
-                a.axvline(START_CM, color="#1f4e79", lw=.8, ls=":")
-                a.axvline(REWARD_CM, color="#7d3c98", lw=.8, ls="--")
-
-                _rw, _rwe = _RAW[:, i], _RAW_se[:, i]
-                a.fill_between(_xcm, _rw - _rwe, _rw + _rwe,
-                               color="0.5", alpha=.25, lw=0)
-                a.plot(_xcm, _rw, color="0.35", lw=.7, ls=(0, (3, 1.5)),
-                       label="raw")
-
-                _col = _SHORTC.get(_tmpl[i], "0.4")
-                _cu, _cue = _CU[:, i], _CU_se[:, i]
-                a.fill_between(_xcm, _cu - _cue, _cu + _cue,
-                               color=_col, alpha=.30, lw=0)
-                a.plot(_xcm, _cu, color=_col, lw=1.3, label="residual")
+                _rw = _RAW[:, i]
+                _draw_trace(a, cfg, _xcm, _rw, _RAW_se[:, i],
+                            _SHORTC.get(_tmpl[i], "0.4"),
+                            EDGE_CM, START_CM, REWARD_CM)
 
                 if _gpk_bin[i] >= 0:
                     a.plot([_gpk_pos[i]], [_rw[_gpk_bin[i]]],
                            marker="v", ms=3, color="0.35", clip_on=False)
                 if _pk_bin[i] >= 0:
-                    a.plot([_pk_pos[i]], [_cu[_pk_bin[i]]],
+                    a.plot([_pk_pos[i]], [_rw[_pk_bin[i]]],
                            marker="v", ms=4, color="#c0392b", clip_on=False)
-
-                _v   = np.concatenate([_cu - _cue, _cu + _cue,
-                                       _rw - _rwe, _rw + _rwe])
-                _lim = (float(np.nanmax(np.abs(_v))) * 1.10
-                        if np.isfinite(_v).any() else 1.0)
-                a.set_ylim(-_lim, _lim)
-                a.set_xlim(0.0, max(cfg.corridor_cm, REWARD_CM) + 1.5)
-                a.tick_params(labelsize=5, length=2)
                 a.set_ylabel("rate", fontsize=6)
-                if r == 0:
-                    a.legend(frameon=False, fontsize=4.8, ncol=2,
-                             loc="upper left", handlelength=1.1,
-                             borderpad=.1, handletextpad=.4,
-                             columnspacing=.9)
                 if r == ROWS - 1 or i == sel[-1]:
                     a.set_xlabel("position (cm)", fontsize=6)
 

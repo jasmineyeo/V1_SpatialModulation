@@ -15,7 +15,7 @@ from tqdm import tqdm
 
 from candidate_kernels import fit_span_mask
 from basis_funcs import lag_expand
-from glm import (PoissonFold, _fit_chosen, _glm_w, _null_mu, _pick_lambda_PB,
+from glm import (_fit_chosen, _glm_w, _null_mu, behavior_offset,
                  _select_kernel, active_backend, dev_explained, poisson_dev)
 
 try:
@@ -147,9 +147,7 @@ def _shapes_fold_worker(te_lap, lap_r, Yr, XPBr, Xs, onePB, cfg,
     if tr.sum() < 500 or te.sum() < 50:
         return None
 
-    lamPB = _pick_lambda_PB(XPBr, Yr, tr, lap_r, cfg, scale=onePB)
-
-    OFF = next(PoissonFold(XPBr[tr], Yr[tr]).eta(XPBr, onePB, [lamPB]))
+    OFF = behavior_offset(XPBr, Yr, tr, lap_r, cfg, scale=onePB)
 
     tl = np.unique(lap_r[tr])
     nv = max(1, len(tl) // cfg.n_inner_folds)
