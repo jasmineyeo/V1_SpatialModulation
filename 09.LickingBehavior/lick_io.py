@@ -287,6 +287,18 @@ def read_tmlog(path: str) -> TMLog:
         start_s = (session_start.hour * 3600 + session_start.minute * 60
                    + session_start.second + session_start.microsecond / 1e6)
         elapsed = cts - start_s
+        # The per-row `current time` column has no AM/PM marker and is a
+        # 12-hour clock (e.g. "04.00.59" for 4 PM), while the header's
+        # session-start DOES carry AM/PM and parses to the correct 24-hour
+        # hour -- so for any afternoon/evening session the two disagree by
+        # exactly 12 h and `elapsed` comes out ~43200 s off (TM logging
+        # actually starts within seconds of the header line). Fix by
+        # shifting by whichever multiple of 12 h brings the first row
+        # closest to 0 (safe: a recording session is well under 12 h).
+        if len(elapsed):
+            k = round(-float(elapsed[0]) / (12 * 3600))
+            if k:
+                elapsed = elapsed + k * 12 * 3600
     else:
         elapsed = cts - cts[0] if len(cts) else cts
 

@@ -174,9 +174,7 @@ def batch_save_all_cells_smi(parent_dir, skip_existing=True, verbose=True):
 
 if __name__ == "__main__":
     # Single-session test first (per project convention: verify one before batch)
-    test_file = (r"D:\V1_SpatialModulation\2p\V1_prism\JSY054_ChronicImaging"
-                 r"\251031_JSY_JSY054_SpMod_Day2\TSeries-10312025-1751-001"
-                 r"\JSY054_Day2_smi_results.h5")
+    test_file = (r"D:\V1_SpatialModulation\2p\V1_prism\JSY052_ChronicImaging\251013_JSY_JSY052_SpatialModulation_Day5\TSeries-10132025-1236-001\JSY052_Day5_smi_results.h5")
     save_all_cells_smi(test_file)
 
     # Once verified, run across everything:

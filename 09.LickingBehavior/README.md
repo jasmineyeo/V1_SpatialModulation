@@ -1,4 +1,7 @@
-# 10. Licking Behavior — DCZ / DREADD (JSY083, JSY084)
+# 09. Licking Behavior — DCZ / DREADD (JSY083, JSY084)
+
+> Folder was `10.LickingBehavior/`; renumbered to `09.` (double-digit scheme,
+> after `08.DREADD_Analysis`).
 
 Detect and quantify **licking behavior** from a face camera (DeepLabCut
 tracked) across learning and under chemogenetic silencing (DCZ), using the
@@ -84,10 +87,20 @@ primary lick signal; `chin` is secondary.)
 | `chin` | lick detection, secondary / support |
 
 **Use the DLC `led` bodypart at likelihood > 0.6** as the LED on/off
-signal (per Jasmine — the video is only for visual confirmation). The
-real LED sits at pixel **~(369, 538)** in `260618_JSY083_B1`; filter to
-`x ∈ [344,394], y ∈ [516,560], likelihood > 0.6` to reject a second DLC
-cluster (~95,116) that is monitor noise.
+signal (per Jasmine — the video is only for visual confirmation).
+
+**The face camera was re-seated between recording days**, so the LED (and
+the tongue) sit at a **different pixel every session** — LED x ∈ [296, 402],
+y ∈ [492, 589] across the 22 recordings; notebook 2 auto-locates the tongue
+the same way it once did the LED. **The LED itself is no longer gated by any
+pixel location at all** — `extract_led_epochs` (in `lick_sync.py`) classifies
+every candidate flash purely by its **blink pattern**: any contiguous
+`led` p>0.6 run (VR-monitor-noise region excluded) is kept if the detections
+*within that one blink* stay spatially tight (≤30 px). A per-session or
+per-split fixed center was tried first and both failed on `260620_JSY083_B3`,
+where the LED sits at two different pixels (≈50 px apart) within the same
+session — the blink-pattern method needs no location at all, so it handles a
+shift happening anywhere, mid-split included, and runs at the same cost.
 
 - **LED sync** — see the sync section below.
 - **Lick detection** uses `tongue` presence (likelihood + position
@@ -141,18 +154,36 @@ The `led` bodypart flashes on two VR events, separable by duration:
 | `n` (new trial) | **~16 frames (~0.53 s)** | 90/90 detected |
 | `r` (reward)    | **1–3 frames** | 89/89 detected |
 
-Method: filter `led` to the LED-cluster box + `p > 0.6` → contiguous runs
-(merge gaps ≤ 3) → classify **brief (≤ 7 f) = `r`**, **long (≥ 9 f) = `n`**
-→ shared-slope, per-flash-type-intercept least-squares fit to the VR `n`
-and `r` times.
+Method: `led` p > 0.6 (VR-monitor noise excluded) → contiguous runs (merge
+gaps ≤ 3) → keep only runs whose OWN detections stay within 30 px of each
+other (a real blink doesn't wander; no pre-located pixel needed) → classify
+**brief (≤ 7 f) = `r`**, **long (≥ 9 f) = `n`**. Then the **slope + `b_n`** come from the long
+`n`-flashes only (well-defined onset) via an iterative robust line fit
+(trims anchors from blocked / clock-wobble stretches), and **`b_r`** is a
+pure median offset of the brief `r`-flashes against that fixed slope.
+`b_n − b_r ≈ 0.50 s` on every session (the physical r/n flash-lag gap — a
+built-in sanity check). The camera often started **minutes** before the VR
+program (camera-lead 4 s … 345 s across the 22), so the coarse offset
+search is wide (−600 … +60 s).
 
-Sample result (`260618_JSY083_B1`, all 6 splits):
-```
-vr_n = 0.99998·(frame/30) − 8.432        # b_n
-vr_r = 0.99998·(frame/30) − 8.932        # b_r
-```
-residual **sd 15.6 ms** (< ½ frame), fps_eff 29.9995, camera started
-~8.7 s before VR `n1`. 98/98 `n`-flashes + 97/97 `r`-flashes detected.
+**Piecewise sync.** `frame_to_vr` / `vr_to_frame` interpolate a straight line
+**through the detected LED flashes** (n- and r-flashes on one common clock),
+with the linear model as the fallback outside the anchored span / in blocked
+stretches. This removes a slow camera-clock wobble ~5 sessions have (the webcam's
+real capture rate isn't perfectly 30.000 fps over 45 min — DLC-row vs video-frame
+counts match on every split, so it's capture jitter, not a concat error). Each
+trial with its own flash then sits exactly on its anchors. `resid_sd_ms` still
+reports the **linear** residual (the honest "how non-linear was the clock"
+number); `n_sync_wobble_trials` counts trials whose flash is > 100 ms off the
+linear anchor.
+
+**Frame clipping.** The camera often starts minutes before the VR program
+(camera-lead 4 s … 345 s across the 22). Notebook 1 drops every pose frame before
+`n1 − 2 s`; `pose/frame` keeps the original frame numbers and `clip_start_frame`
+records the offset, so you can still map back to the video.
+
+Sample `260618_JSY083_B1`: residual **15 ms**, fps_eff 30.000, camera 8.7 s
+early, 98/98 n + 97/97 r flashes.
 
 ### What the LED is actually marking
 
@@ -182,15 +213,16 @@ with onset / center / weighted-centroid):
 | `n_anchor_frame` | `vr_to_frame(n_time_vr, "n")` | teleport frame |
 | `r_anchor_frame` | `vr_to_frame(r_time_vr, "r")` | valve-open frame |
 
-100% coverage, latency-corrected, works for trial 1. The **detected LED
-flashes are used only to build the sync and to QC each trial**
-(`{n,r}_flash_resid_ms` = flash − anchor; `led_ok`) — the latency variance
-is ~15 ms so the raw flash has no accuracy edge, and log+sync is more
-robust to a missed brief flash / bad session.
+100% coverage, latency-corrected, works for trial 1. With the piecewise sync
+a trial that has its own flash gets an LED-exact anchor; a trial with no
+flash gets the interpolation between its neighbours.
 
-**Flag, don't drop.** `n1` legitimately has no LED (first trial). Any other
-`n`/`r` whose detected flash is > ~0.5 s off its anchor → `led_ok = False`,
-carried downstream.
+**`led_ok`** = this trial has its own LED flash(es). `led_ok = False` = no
+flash (blocked / occluded / `n1`) → the anchor is interpolated (still good —
+"if the rest of the sync is fine, trust the VR trial-start / reward"). These
+trials are listed in `led_flagged_trials` / `led_blocked_runs` for review,
+never dropped. `{n,r}_flash_resid_ms` = flash − **linear** anchor (marks
+clock-wobble stretches); `sync_wobble` flags the > 100 ms ones.
 
 ---
 
@@ -213,6 +245,26 @@ scorer-mismatch + numbering warnings). Load with
 `concat_dlc_splits.load_concat_h5` / `concat_as_dataframe`.
 
 Reads DLC `.h5` with **h5py directly, not `pandas.read_hdf`** — see below.
+
+### `batch_lickproc.py`  ✅ done — all 22 recordings
+
+Runs notebooks 1 → 2 → 3 over every recording under
+`F:\dlc\lick-detector_v0-JSY-2026-06-16\videos\{JSY083,JSY084}\*\`.
+
+```
+<preg-mini2p python> batch_lickproc.py            # all 22
+<preg-mini2p python> batch_lickproc.py --list     # dry run
+<preg-mini2p python> batch_lickproc.py --only 260618_JSY083_B1
+```
+
+Run it with the **preg-mini2p** conda env's python (that's the `python3`
+Jupyter kernel; it has `nbclient` + the full stack). Per recording folder:
+all the per-session output files + `lick_figures/` (every PNG from the three
+notebooks, named by section, plus `_executed_{1,2,3}.ipynb`). At the dataset
+root: `all_sessions_lickmetrics.csv` (one row per recording), 
+`all_sessions_trajectory.csv` (stacked rolling within-session), and
+`batch_lickproc_log.txt`. The concat `.h5` is cached, so re-runs are ~15 s /
+session (~6 min total).
 
 ---
 
@@ -255,53 +307,83 @@ verbatim `dlc_utils` are kept for `split_xyl` / `apply_liklihood_thresh` /
       0 trials flagged.
 - [x] `lick_sync.py` — `extract_led_epochs` / `sync_led_to_vr` / `frame_to_vr` /
       `vr_to_frame` / `load_sync_model` (consolidated from notebook 1)
-- [x] **`2.LickDetection.ipynb`** — licks from `tongue` (peak-pick) + `chin`
-      bouts. Sample: 1572 licks, **7.5 Hz** ILI, licks → VR clock + position.
-- [x] `lick_metrics.py` — `classify_licks` / `lick_rate_vs_position` /
-      `speed_vs_position` / `reward_psth` / `first_approach_lick` / `session_metrics`
-- [x] **`3.LickMetrics.ipynb`** — occupancy-normalised lick-rate-vs-position
-      curve, reward PSTH, first-lick, early-vs-late, speed control → metrics row.
-      Sample: anticipatory ratio 2.8, onset ~99 au before RZ; licking rises where
-      the animal is still fast (not a deceleration artifact).
-- [ ] `4.SessionComparison.ipynb` — baseline trajectory + saline / DCZ100 / DCZ200
-      (needs the full JSY083 / JSY084 folder layout + condition naming)
+- [x] **`2.LickDetection.ipynb`** — licks = `tongue_likelihood` peaks **inside a
+      chin bout**. Sample: 1500 licks, **7.5 Hz** ILI, → VR clock + position.
+- [x] `lick_metrics.py` — `au_to_cm_factor` / `classify_licks` (4-cat) /
+      `lick_rate_vs_position` / `speed_accel_vs_position` / `reward_psth` /
+      `first_approach_lick` / `lick_scatter_data` / `session_metrics` / `rolling_metrics`
+- [x] **`3.LickMetrics.ipynb`** — 4-category classify + composition · occupancy /
+      lick-rate-vs-**cm**-position / speed+accel · per-session lick scatter (raw +
+      binned) · reward PSTH · early-vs-late · speed control · **rolling
+      within-session trajectory** → `{rec}_lickmetrics.{csv,h5}` + `_trajectory.csv`
+- [x] **`batch_lickproc.py`** — driver, runs notebooks 1–3 over all 22 recordings;
+      saves every figure per folder + master CSVs at the dataset root. All 22 ran.
+- [x] **`4.SessionComparison.ipynb`** — baseline learning + saline / DCZ100 /
+      DCZ200, within- **and** across-session, both animals; `session_comparison_summary.csv`
 
 ## Notebooks / pipeline
 
 | notebook | in | does | out |
 |---|---|---|---|
 | **`1.Preprocess.ipynb`** | split `.h5` + VR/TM logs | concat · logs · LED flashes (DLC `led`, p>0.6) · **camera↔VR sync** (diagnostics) · per-trial table | `{rec}_dlc_concat.h5`, `{rec}_lickproc.h5` |
-| **`2.LickDetection.ipynb`** | `lickproc.h5` | **licks** = peaks in `tongue_likelihood` (`find_peaks`, h≥0.3, dist≥2 f) + loose position box · **bouts** = smoothed `chin_likelihood` > 0.4 · licks → VR clock + position · diagnostics (traces around rewards, ILI histogram → **7.5 Hz** on sample, licks-vs-bout-duration, session raster) | `licks/` + `bouts/` → `lickproc.h5` |
-| **`3.LickMetrics.ipynb`** | `lickproc.h5` | classify licks (carryover / approach / consummatory) · **occupancy-normalised lick-rate-vs-position curve** · reward-aligned PSTH · per-trial first-lick · within-session early-vs-late · speed control | `{rec}_lickmetrics.csv` (row) + `.h5` (curves) |
-| `4.SessionComparison.ipynb` | all sessions of an animal | run 1–3 over every session (config list) · baseline trajectory · saline vs baseline · **DCZ 100/200 vs saline & baseline** (dose-dependent?) | comparison tables + figures |
+| **`2.LickDetection.ipynb`** | `lickproc.h5` | **licks** = `tongue_likelihood` peaks (`find_peaks` h≥0.3, dist≥2 f) **inside a chin bout** · **bouts** = smoothed `chin_likelihood` > 0.4 · licks → VR clock + position | `licks/` + `bouts/` → `lickproc.h5` |
+| **`3.LickMetrics.ipynb`** | `lickproc.h5` | AU→cm · **4-category classify** + composition · occupancy-normalised **lick-rate-vs-position curve** + speed/accel · **per-session lick scatter** (raw + binned) · reward PSTH · first-lick (secondary) · early-vs-late · speed control · **rolling within-session trajectory** | `{rec}_lickmetrics.csv` + `_trajectory.csv` + `.h5` |
+| `batch_lickproc.py` | dataset root | loop 1–3 over all 22 recordings | all per-session files |
+| `4.SessionComparison.ipynb` | all sessions/animal | baseline learning curve · saline vs baseline · **DCZ 100/200 vs baseline & saline** · within- + across-session, both animals | comparison tables + figures |
 
 `extract_led_epochs` / `sync_led_to_vr` / `frame_to_vr` / `vr_to_frame` /
 `load_sync_model` → **`lick_sync.py`** (imported by 1 & 2).
-`classify_licks` / `lick_rate_vs_position` / `speed_vs_position` / `reward_psth`
-/ `first_approach_lick` / `session_metrics` → **`lick_metrics.py`** (imported by 3).
-Notebook 4 still needs the folder layout + condition naming for the full
-JSY083/JSY084 set.
+`au_to_cm_factor` / `classify_licks` / `lick_rate_vs_position` /
+`speed_accel_vs_position` / `reward_psth` / `first_approach_lick` /
+`lick_scatter_data` / `session_metrics` / `rolling_metrics` → **`lick_metrics.py`**
+(imported by 3).
 
-**Theory:** anticipatory licking narrows onto the reward zone (spatially +
-temporally) with learning — early = scattered anywhere, late = the last stretch
-before reward. Learning-trajectory metrics (↑/↓ = expected direction with
-training): `anticipatory_ratio` ↑ (RZ-zone rate ÷ neutral-zone rate — the
-primary curve), `anticipatory_onset_au` → RZ, `dist_onset_to_reward_au` ↓,
-`lick_spread_au` ↓, `frac_approach_licks_in_rz` ↑, `first_lick_pos_median_au`
-→ RZ (sd ↓). Split pre-reward licks into anticipatory (last 60 au) vs.
-exploratory (rest) — expect anticipatory ↑ while exploratory ↓.
+### Trial timeline
+
+`reach corridor end → black screen (~1.5 s, no VR position) → water/valve (LED
+r-flash) → drink (~1.5 s) → teleport (LED n-flash)`. Position gap ~3 s. A
+drinking bout straddles the valve and spills past the next teleport.
+
+### AU → cm
+
+`cm = au · 130 / (min(max_au, 393) − min_au)` per session (matches
+`helper/BehavioralDataFiltering.py`). Sample: cm/au ≈ 0.343, reward zone ≈ 135 cm.
+
+### 4 lick categories
+
+A *drinking bout* = a chin bout spanning a trial's valve; the whole bout (incl.
+frames past the next teleport) belongs to that reward.
+
+| category | rule | learning → |
+|---|---|---|
+| `approaching_nonreward` | not drinking bout · has position · < RZ−30 cm | ↓ (exploratory) |
+| `approaching_reward` | not drinking bout · has position · RZ−30…RZ−3 cm | ↑ (anticipation while running) |
+| `consummatory_pre_reward` | in drinking bout · before valve | ↑ (black-screen temporal anticipation) |
+| `consummatory_post_reward` | in drinking bout · at/after valve | drinking (absorbs old "carryover") |
+
+### Learning-trajectory metrics (per session + rolling within-session)
+
+`anticipatory_index` = (rz_rate − neutral_rate)/(rz_rate + neutral_rate) ∈ [−1,1]
+— the **stable** primary metric (`anticipatory_ratio` also kept, floored).
+`lick_median_cm` / `lick_com_cm` → toward RZ. `lick_spread_cm` ↓.
+`frac_approach_licks_in_rz` ↑. `consummatory_pre_reward_per_trial` ↑.
+`first_consummatory_lick_latency_s` ↓ (faster to lick after black-screen onset).
+`anticipatory_onset_cm` is included but **flaky** (saturates) — don't lead with it.
 
 `{rec}_lickproc.h5`:
 - `pose/{data (N,9) f32, frame, split_number}` + `coord_names` attr
 - `sync/{a, b_n, b_r, b_generic, fps_eff, camera_lead_s, resid_sd_ms,
-  resid_max_ms, o0, anchors_n, anchors_r}`
+  resid_max_ms, r_flash_spread_ms, o0, n_anchors, n_anchors_dropped,
+  led_center_x, led_center_y, anchors_n, anchors_r}`
 - `trials/{trial, n_time_vr, r_time_vr, n_anchor_frame, r_anchor_frame,
   n_flash_frame, r_flash_frame, n_flash_resid_ms, r_flash_resid_ms,
-  reward_pos_au, led_ok}`
-- `licks/{frame, vr_time, position_au, trial, phase, bout_id}` + attrs
-  `tongue_p, chin_p, lick_hz, n_licks, n_bouts`
+  reward_pos_au, led_ok, sync_wobble}` (frames are clip-relative)
+- `licks/{frame, vr_time, position_au, trial, bout_id}` + attrs
+  `tongue_p, chin_p, lick_hz, n_licks, n_bouts, tongue_center_x, tongue_center_y`
 - `bouts/{start_frame, end_frame, n_licks, tongue_coverage}`
-- root attrs `recording`, `reward_zone_au`, `n_trials`, `vrlog_path`, `fps`
+- root attrs `recording`, `reward_zone_au`, `clip_start_frame`, `n_trials`,
+  `n_led_ok_trials`, `n_sync_wobble_trials`, `led_flagged_trials`,
+  `led_blocked_runs`, `vrlog_path`, `fps`
 
 Use `frame_to_vr(frame, model, kind)` / `vr_to_frame(t, model, kind)` with
 `kind ∈ {"n","r","generic"}` to move between the camera and VR clocks.
