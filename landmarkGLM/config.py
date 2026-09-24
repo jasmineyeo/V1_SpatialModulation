@@ -54,6 +54,12 @@ class Config:
     lambda_grid = np.logspace(0, 6, 9) # for the pure behavior block
 
     r2_threshold = 0.005
+
+    # 'mse' or 'deviance'
+    score_metric = "mse"
+    # how per-landmark gains are read off a fit: 'kernel' = peak of the fitted
+    # lag kernel per unit bump; 'eta' = peak fitted log rate inside the zone
+    gain_method = "eta"
     free_lambda_sig_r2 = 0.02
 
     mu_grid = np.arange(2.5, 135.0, 5.0)
@@ -82,10 +88,10 @@ class Config:
 
     reward_gauss_in_PB = True
 
-    reward_n_basis = 3 # bumps tiling the approach; 1 = single bump
-    reward_span_cm = (122.0, 134.0) # centers are spread across this range
-    reward_sigma_cm = 4.5 # cm, shared width
-    reward_cut_cm = None # hard zero past here... None means corridor_cm
+    reward_n_basis = 3
+    reward_span_cm = (122.0, 134.0)
+    reward_sigma_cm = 4.5
+    reward_cut_cm = None
 
     onset_gauss_in_PB = True
     onset_n_basis = 2
@@ -114,8 +120,8 @@ class Config:
     va_slope_range = (0.20, 1.2)
 
     adapt_in_candidates = True
-    adapt_ramp_s        = None # None means median lap duration
-    adapt_per_lap_ramp  = False # True makes it distance-like
+    adapt_ramp_s        = None
+    adapt_per_lap_ramp  = False
     adapt_match_scale   = True
 
     adapt_ramp_origin = "span"
@@ -132,4 +138,29 @@ class Config:
 
     pref_log_ratio_min = 0.25
 
-    require_trace_agreement = True
+    reward_cm = 134.4
+
+    rel_bin_cm = 3.0
+    rel_min_frames = 10
+    rel_min_bins = 10
+    rel_n_splits = 25
+    rel_n_shuffles = 5
+    rel_min_shift_s = 60.0
+    rel_null_pct = 99.0
+    rel_min_r = 0.50
+    rel_seed = 0
+
+    ladder_lambdas = np.array([1.0, 10.0, 100.0, 1000.0])
+
+    floor_check_z = 3.0
+    floor_check_frac = 0.25
+
+    compete_template_vs_gain = False
+    label_source = "gain"
+    min_d_gain = 0.235
+    min_raw_peak_ratio = 1.2
+    label_identity = "raw"
+
+    fixed_hyperparams_per_cell = True
+
+    ridge_lambda = 10.0

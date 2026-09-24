@@ -51,6 +51,21 @@ def poisson_dev(Y, MU):
 DEV_NULL_FLOOR = 1e-9
 
 
+def score_loss(Y, MU, metric="deviance"):
+    """ Per-cell held-out loss the model comparison is scored on.
+
+    'mse' is the summed squared error; 'deviance' is poisson_dev. Both are
+    sums (not means) so that 1 - L_model / L_null is a proper R2 either way.
+    """
+
+    if metric == "mse":
+        return np.sum((np.asarray(Y, float) - MU) ** 2, axis=0)
+    if metric == "deviance":
+        return poisson_dev(Y, MU)
+    raise ValueError("score_metric must be 'mse' or 'deviance', got {!r}"
+                     .format(metric))
+
+
 def dev_explained(dmod, dnull):
     """ 1 - D_model / D_null, with silent cells returned as NaN rather than 1.0.
     summary.
@@ -282,6 +297,15 @@ def _pois_dev_torch(Y, MU):
     return 2.0 * (t - (Y - MU)).sum(dim=0)
 
 
+def _loss_torch(Y, MU, metric="deviance"):
+    """ score_loss, on device. """
+
+    if metric == "mse":
+        return ((Y - MU) ** 2).sum(dim=0)
+
+    return _pois_dev_torch(Y, MU)
+
+
 def _pen_vec_torch(pen, p, q, dev):
     """ Per-column penalty as a (q,) fp64 tensor, intercept unpenalized. """
 
@@ -341,7 +365,8 @@ def _irls_torch(X, Y, off=None, pen=0.0, W0=None, b0=None,
     return out[:p], out[p]
 
 
-def _select_kernel_torch(Xlist, Y, off, fit, val, lams, order, denom):
+def _select_kernel_torch(Xlist, Y, off, fit, val, lams, order, denom,
+                         metric="deviance"):
     """ _select_kernel's candidate loop, without leaving the device.
     """
 
@@ -378,7 +403,7 @@ def _select_kernel_torch(Xlist, Y, off, fit, val, lams, order, denom):
             TH = _irls_core_torch(Z32, Zd, P, iu, Yf, Of,
                                   _pen_vec_torch(lams[j], p, q, dev), TH0=TH)
             eta = torch.clamp(Xvd @ TH[:p] + TH[p] + Ov, -ETA_CLIP, ETA_CLIP)
-            d = _pois_dev_torch(Yv, torch.exp(eta))
+            d = _loss_torch(Yv, torch.exp(eta), metric)
             S[i, j] = torch.where(den > DEV_NULL_FLOOR, 1.0 - d / den,
                                   torch.full_like(den, float("nan"))).cpu().numpy()
         del Xt, Xf, Xv, Xvd, Z32, Zd, P
@@ -586,7 +611,8 @@ class PoissonFold:
             yield np.exp(e)
 
 
-def _select_kernel(Xlist, Y, off, fit, val, lambdas, return_scores=False):
+def _select_kernel(Xlist, Y, off, fit, val, lambdas, return_scores=False,
+                   metric="deviance"):
     """ Choose, per cell, which candidate kernel to use -- ON TRAINING LAPS ONLY.
 
     Parameters
@@ -605,6 +631,8 @@ def _select_kernel(Xlist, Y, off, fit, val, lambdas, return_scores=False):
         Ridge penalties to try; one is chosen for the whole fold.
     return_scores : bool
         If True, also return the full (candidate, cell) validation score matrix.
+    metric : {'deviance', 'mse'}
+        What the validation split is scored on. The fit itself is always Poisson.
 
     Returns
     -------
@@ -624,14 +652,15 @@ def _select_kernel(Xlist, Y, off, fit, val, lambdas, return_scores=False):
     nc = Y.shape[1]
 
     MU0v = _null_mu(Yf, Of, Ov, n_eval=int(val.sum()))
-    denom = poisson_dev(Yv, MU0v)
+    denom = score_loss(Yv, MU0v, metric)
 
     lams = np.asarray(lambdas, float)
     order = np.argsort(lams)[::-1]
 
     S = np.full((len(Xlist), len(lams), nc), -np.inf)
     if active_backend() == "torch":
-        S = _select_kernel_torch(Xlist, Y, off, fit, val, lams, order, denom)
+        S = _select_kernel_torch(Xlist, Y, off, fit, val, lams, order, denom,
+                                 metric)
     else:
         for i, X in enumerate(Xlist):
             Xf, Xv = X[fit], X[val]
@@ -644,7 +673,7 @@ def _select_kernel(Xlist, Y, off, fit, val, lambdas, return_scores=False):
                 W, b = poisson_irls(Xf, Yf, Of, np.full(p, lams[j]), W0=W,
                                     b0=b, P=P, Z=Z)
                 MU = np.exp(np.clip(Xv @ W + b + Ov, -ETA_CLIP, ETA_CLIP))
-                S[i, j] = dev_explained(poisson_dev(Yv, MU), denom)
+                S[i, j] = dev_explained(score_loss(Yv, MU, metric), denom)
 
     with np.errstate(invalid="ignore"), warnings.catch_warnings():
         warnings.simplefilter("ignore", RuntimeWarning)

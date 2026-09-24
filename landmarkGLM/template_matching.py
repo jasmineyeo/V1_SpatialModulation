@@ -16,7 +16,7 @@ from tqdm import tqdm
 from candidate_kernels import fit_span_mask
 from basis_funcs import lag_expand
 from glm import (_fit_chosen, _glm_w, _null_mu, behavior_offset,
-                 _select_kernel, active_backend, dev_explained, poisson_dev)
+                 _select_kernel, active_backend, dev_explained, score_loss)
 
 try:
     import ray
@@ -56,7 +56,8 @@ def build_shapes(beh, cfg, lagB, XPB=None, quiet=False):
         return c
 
     _flat = np.ones(4)
-    X, par, shp = [], [], []
+    X, par, shp, meta = [], [], [], []
+    K = lagB.shape[1]
     for dl in cfg.delta_grid:
         for sg in cfg.sigma_grid:
             flat = _comb(_flat, dl, sg)
@@ -64,6 +65,7 @@ def build_shapes(beh, cfg, lagB, XPB=None, quiet=False):
             X.append(D.astype(np.float32))
             par.append((float(dl), float(sg)))
             shp.append(0)
+            meta.append(None)
             for j in range(4):
                 con = _comb(shape_contrast(j), dl, sg)
                 C = lag_expand(con[:, None], lagB)
@@ -77,18 +79,34 @@ def build_shapes(beh, cfg, lagB, XPB=None, quiet=False):
                 coef, *_ = np.linalg.lstsq(A, C[rm], rcond=None)
                 _P = [D] + ([np.asarray(XPB, float)] if XPB is not None else [])
                 _w = sum(b.shape[1] for b in _P)
+                coefD = coef[:K].copy()      # how much of each D column left C
                 C = C - np.hstack(_P) @ coef[:_w] - coef[_w]
 
                 rC = float(np.sqrt(np.mean(C[rm] ** 2))) if C[rm].size else 0.0
                 rD = float(np.sqrt(np.mean(D[rm] ** 2))) if D[rm].size else 1.0
+                scale = 1.0
                 if rC > 1e-12:
-                    C = C * (rD / rC)
+                    scale = rD / rC
+                    C = C * scale
 
                 X.append(np.hstack([D, C]).astype(np.float32))
                 par.append((float(dl), float(sg)))
                 shp.append(j + 1)
+                meta.append(dict(j=j, scale=float(scale), coefD=coefD))
 
-    return dict(X=X, par=par, shape=np.asarray(shp))
+    return dict(X=X, par=par, shape=np.asarray(shp), meta=meta, lagB=lagB)
+
+
+def zone_mask(pos, cfg):
+    """ (n_frames, 4) bool, True where pos is inside landmark zone k.
+    """
+
+    pos = np.asarray(pos, float)
+    M = np.zeros((len(pos), len(cfg.zones)), bool)
+    for k, (z0, z1) in enumerate(cfg.zones):
+        M[:, k] = (pos >= z0) & (pos < z1)
+
+    return M
 
 
 def _landmark_log_gains(Xlist, idx, Y, off, tr, lam, land_mask):
@@ -105,6 +123,44 @@ def _landmark_log_gains(Xlist, idx, Y, off, tr, lam, land_mask):
         for k in range(4):
             if lm[:, k].any():
                 G[k, cells] = np.nanmax(eta[lm[:, k]], axis=0)
+
+    return G
+
+
+def _kernel_peak(Kn):
+    """ Signed value at the largest-magnitude lag of each column of Kn.
+    """
+
+    return Kn[np.argmax(np.abs(Kn), axis=0), np.arange(Kn.shape[1])]
+
+
+def _landmark_kernel_gains(Xlist, idx, Y, off, tr, lam, lagB, meta=None):
+    """ Per-landmark gain as the peak of the fitted lag kernel.
+    """
+
+    nc = Y.shape[1]
+    Kb = lagB.shape[1]
+    G = np.full((4, nc), np.nan)
+    for i in np.unique(idx):
+        cells = np.where(idx == i)[0]
+        W = _glm_w(Xlist[i][tr], Y[tr][:, cells], off[tr][:, cells], lam)
+        if meta is None:
+            for k in range(4):
+                G[k, cells] = _kernel_peak(lagB @ W[k::4])
+            continue
+        Wd = W[:Kb]
+        m = meta[i]
+        if m is None:
+            base = lagB @ Wd
+            for k in range(4):
+                G[k, cells] = _kernel_peak(base)
+            continue
+        Wc = W[Kb:2 * Kb]
+        base = lagB @ (Wd - m["scale"] * (m["coefD"] @ Wc))
+        ext = m["scale"] * (lagB @ Wc)
+        w = shape_contrast(m["j"])
+        for k in range(4):
+            G[k, cells] = _kernel_peak(base + w[k] * ext)
 
     return G
 
@@ -139,8 +195,10 @@ def pref_ratio_from_gains(G, pick):
 
 
 def _shapes_fold_worker(te_lap, lap_r, Yr, XPBr, Xs, onePB, cfg,
-                        shape_arr, par, LADDER_LAMBDAS, nc, nsh, land_mask):
-    """Single outer fold for fit_shapes. Returns fold contribution or None if skipped."""
+                        shape_arr, par, LADDER_LAMBDAS, nc, nsh, land_mask,
+                        meta=None, lagB=None):
+    """Single outer fold for fit_shapes. Returns fold contribution or None if skipped.
+    """
 
     te = np.isin(lap_r, te_lap)
     tr = ~te
@@ -156,8 +214,9 @@ def _shapes_fold_worker(te_lap, lap_r, Yr, XPBr, Xs, onePB, cfg,
     if fit.sum() < 200 or val.sum() < 50:
         return None
 
+    metric = getattr(cfg, "score_metric", "mse")
     idx, lam, _, Sful = _select_kernel(Xs, Yr, OFF, fit, val, LADDER_LAMBDAS,
-                                       return_scores=True)
+                                       return_scores=True, metric=metric)
     Ssh_fi = np.full((nsh, nc), np.nan)
     for _s in range(nsh):
         mask = shape_arr == _s
@@ -165,14 +224,17 @@ def _shapes_fold_worker(te_lap, lap_r, Yr, XPBr, Xs, onePB, cfg,
             Ssh_fi[_s] = np.nanmax(Sful[mask], axis=0)
 
     Yte = Yr[te]
-    dnull = poisson_dev(Yte, _null_mu(Yr[tr], OFF[tr], OFF[te],
-                                      n_eval=int(te.sum())))
-    dmod = poisson_dev(Yte, _fit_chosen(Xs, idx, Yr, OFF, tr, te, lam))
+    dnull = score_loss(Yte, _null_mu(Yr[tr], OFF[tr], OFF[te],
+                                     n_eval=int(te.sum())), metric)
+    dmod = score_loss(Yte, _fit_chosen(Xs, idx, Yr, OFF, tr, te, lam), metric)
 
     pick_raw = shape_arr[idx]
     dl_fi    = np.array([par[idx[c]][0] for c in range(nc)], float)
     sg_fi    = np.array([par[idx[c]][1] for c in range(nc)], float)
-    G_fi     = _landmark_log_gains(Xs, idx, Yr, OFF, tr, lam, land_mask)
+    if getattr(cfg, "gain_method", "kernel") == "kernel" and lagB is not None:
+        G_fi = _landmark_kernel_gains(Xs, idx, Yr, OFF, tr, lam, lagB, meta)
+    else:
+        G_fi = _landmark_log_gains(Xs, idx, Yr, OFF, tr, lam, land_mask)
 
     pr_fi    = pref_ratio_from_gains(G_fi, pick_raw)
     pick_fi  = np.where((pick_raw > 0) & ~(pr_fi > 1.0), 0, pick_raw)
@@ -227,10 +289,9 @@ def fit_shapes(Y, beh, cfg, XPB, fam, scalePB=None, lap_subset=None,
     shape_arr  = fam["shape"]
     par        = fam["par"]
 
-    land_mask = np.zeros((len(lap_r), 4), bool)
-    _pos_r = beh["pos"][rm]
-    for _k, (_z0, _z1) in enumerate(cfg.zones):
-        land_mask[:, _k] = (_pos_r >= _z0) & (_pos_r < _z1)
+    land_mask = zone_mask(beh["pos"][rm], cfg)
+    meta = fam.get("meta")
+    lagB = fam.get("lagB")
 
     if HAS_RAY and active_backend() != "torch":
         if not ray.is_initialized():
@@ -246,7 +307,7 @@ def fit_shapes(Y, beh, cfg, XPB, fam, scalePB=None, lap_subset=None,
             _shapes_fold_remote.remote(
                 list(map(int, te_lap)), lr_ref, Yr_ref, XPBr_ref,
                 Xs_ref, onePB, cfg, shape_arr, par,
-                LADDER_LAMBDAS, nc, nsh, lm_ref)
+                LADDER_LAMBDAS, nc, nsh, lm_ref, meta, lagB)
             for te_lap in folds]
         results = ray.get(futures)
         for fi, res in enumerate(results):
@@ -268,7 +329,7 @@ def fit_shapes(Y, beh, cfg, XPB, fam, scalePB=None, lap_subset=None,
             res = _shapes_fold_worker(
                 list(map(int, te_lap)), lap_r, Yr, XPBr,
                 Xs, onePB, cfg, shape_arr, par,
-                LADDER_LAMBDAS, nc, nsh, land_mask)
+                LADDER_LAMBDAS, nc, nsh, land_mask, meta, lagB)
             if res is None:
                 continue
             dnull    += res["dnull"]

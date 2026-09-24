@@ -6,6 +6,7 @@ DMM, Aug 2026
 """
 
 import os
+from datetime import datetime
 import numpy as np
 import argparse
 import scipy.stats
@@ -18,7 +19,7 @@ from candidate_kernels import build_candidates, fit_span, fit_span_mask
 from glm import _pick_lambda_PB, PoissonFold, _glm_pred, set_backend
 from build_landmark_gains import build_landmark_gains
 from fit_landmark_gains import fit_landmark_gains
-from template_matching import build_shapes, fit_shapes
+from template_matching import SHAPE_NAMES, build_shapes, fit_shapes
 from plots import _compute_display_curves, plot_review_pdf, plot_excluded_pdf
 from gui_funcs import select_directory, select_file
 
@@ -27,9 +28,8 @@ def main(SUITE2P, VRLOG, OUTDIR):
 
     os.makedirs(OUTDIR, exist_ok=True)
 
-    REWARD_CM   = 134.4
-
     cfg = Config()
+    REWARD_CM = cfg.reward_cm
 
     _bk = set_backend(getattr(cfg, "glm_backend", "auto"))
     print(" -> GLM backend: {}{}".format(
@@ -43,7 +43,9 @@ def main(SUITE2P, VRLOG, OUTDIR):
     print(" -> Building behavior and candidate kernels...")
     beh = build_behavior(vr_df, dff.shape[1], cfg)
     XPB, lagB, penPB, pbinfo = build_purebehavior(beh, cfg)
-    cand = build_candidates(beh, cfg, lagB)
+    # the tied/shape candidate families only matter when templates compete
+    compete = bool(getattr(cfg, "compete_template_vs_gain", False))
+    cand = build_candidates(beh, cfg, lagB) if compete else None
 
 
     def prep(target):
@@ -64,14 +66,14 @@ def main(SUITE2P, VRLOG, OUTDIR):
 
     Y_rate = prep(cfg.zone_target)
 
-    REL_BIN_CM = 3.0
-    REL_MIN_FRAMES = 10
-    REL_MIN_BINS = 10
-    REL_N_SPLITS = 25
-    REL_N_SHUFFLES = 5
-    REL_MIN_SHIFT_S = 60.0
-    REL_NULL_PCT = 99.0
-    REL_MIN_R = 0.60
+    REL_BIN_CM = cfg.rel_bin_cm
+    REL_MIN_FRAMES = cfg.rel_min_frames
+    REL_MIN_BINS = cfg.rel_min_bins
+    REL_N_SPLITS = cfg.rel_n_splits
+    REL_N_SHUFFLES = cfg.rel_n_shuffles
+    REL_MIN_SHIFT_S = cfg.rel_min_shift_s
+    REL_NULL_PCT = cfg.rel_null_pct
+    REL_MIN_R = cfg.rel_min_r
 
 
     _ZGAP_CM = float(
@@ -158,7 +160,7 @@ def main(SUITE2P, VRLOG, OUTDIR):
         return np.nanmean(acc, axis=0), np.nanmean(acc_f, axis=0)
 
 
-    _rel_rng = np.random.default_rng(0)
+    _rel_rng = np.random.default_rng(cfg.rel_seed)
     rel_r, rel_r_full = _split_half_r(_rel_Y, _rel_rng)
 
     # null
@@ -168,7 +170,7 @@ def main(SUITE2P, VRLOG, OUTDIR):
         _sh = _rel_rng.integers(_rel_shift_lo, _rel_nf - _rel_shift_lo, size=_rel_nc)
         _ix = (np.arange(_rel_nf)[:, None] - _sh[None, :]) % _rel_nf
         _Ysh = np.take_along_axis(_rel_Y, _ix, axis=0)
-        _a, _b = _split_half_r(_Ysh, np.random.default_rng(100 + _s))
+        _a, _b = _split_half_r(_Ysh, np.random.default_rng(cfg.rel_seed + 100 + _s))
         _rel_null.append(_a)
         _rel_null_f.append(_b)
         del _Ysh, _ix
@@ -238,70 +240,73 @@ def main(SUITE2P, VRLOG, OUTDIR):
         amp_onset=_amp_on, amp_reward=_amp_rw, amp_landmark=_amp_lm
     )
 
+    LADDER_LAMBDAS = (np.array([float(cfg.ridge_lambda)])
+                      if getattr(cfg, "ridge_lambda", None) is not None
+                      else cfg.ladder_lambdas)
+
     print(" -> Fitting per-landmark gains...")
     lgain_fam = build_landmark_gains(beh, cfg, lagB)
-    lad = fit_landmark_gains(Y_rate, beh, cfg, XPB, cand, lgain_fam, lagB,
-                             scalePB=penPB)
+    lad = fit_landmark_gains(Y_rate, beh, cfg, XPB, cand, lgain_fam,
+                             scalePB=penPB, LADDER_LAMBDAS=LADDER_LAMBDAS)
 
-    _wf_kernel = ((np.asarray(lad["landmark_gains"], float) > cfg.r2_threshold)
-                  & np.asarray(rel["ok"], bool))
+    _wf_kernel = np.asarray(rel["ok"], bool)
     _wf = _wf_kernel
 
-    SHAPE_NAMES = ["four equal peaks"] + ["L{} preference".format(j + 1)
-                                          for j in range(4)]
 
-    LADDER_LAMBDAS = np.array([1.0, 10.0, 100.0, 1000.0])
+    shp = None
+    if compete:
+        print(" -> Building and fitting shape templates...")
+        shp_fam = build_shapes(beh, cfg, lagB,
+                               XPB=XPB if cfg.use_pure_behavior else None)
+        shp = fit_shapes(Y_rate, beh, cfg, XPB, shp_fam, scalePB=penPB,
+                         LADDER_LAMBDAS=LADDER_LAMBDAS)
 
+        _flat = _wf & (shp["shape_mode"] == 0)
+        _decisive = np.nan_to_num(lad["gain_z"], nan=0.0) > cfg.floor_check_z
+        _conflict = _flat & _decisive
+        _nflat = int(_flat.sum())
 
-    print(" -> Building and fitting shape templates...")
-    # shape contrasts are orthogonalized against behavior only if it's in the model
-    shp_fam = build_shapes(beh, cfg, lagB,
-                           XPB=XPB if cfg.use_pure_behavior else None)
-    shp = fit_shapes(Y_rate, beh, cfg, XPB, shp_fam, scalePB=penPB,
-                     LADDER_LAMBDAS=LADDER_LAMBDAS)
+        _missed = _conflict & (np.nan_to_num(shp["flat_z"], nan=0.0) > cfg.floor_check_z)
+        if _nflat and _conflict.sum() > cfg.floor_check_frac * _nflat:
+            print("  NOTE: {} of {} well-fit cells called 'four equal peaks' have "
+                  "gain_z > 3 from the free per-landmark fit ({:.0f}%), and {} of "
+                  "those also have flat_z > 3 -- those are the ones the shape "
+                  "family may genuinely not reach; the rest are the flat-as-null "
+                  "gate doing its job.".format(
+                      int(_conflict.sum()), _nflat,
+                      100 * _conflict.sum() / max(_nflat, 1), int(_missed.sum())))
 
-    # floor check
-    _flat = _wf & (shp["shape_mode"] == 0)
-    _decisive = np.nan_to_num(lad["gain_z"], nan=0.0) > 3.0
-    _conflict = _flat & _decisive
-    _nflat = int(_flat.sum())
-    # now flat is the null, updated sept 9
-    _missed = _conflict & (np.nan_to_num(shp["flat_z"], nan=0.0) > 3.0)
-    if _nflat and _conflict.sum() > 0.25 * _nflat:
-        print("  NOTE: {} of {} well-fit cells called 'four equal peaks' have "
-              "gain_z > 3 from the free per-landmark fit ({:.0f}%), and {} of "
-              "those also have flat_z > 3 -- those are the ones the shape "
-              "family may genuinely not reach; the rest are the flat-as-null "
-              "gate doing its job.".format(
-                  int(_conflict.sum()), _nflat,
-                  100 * _conflict.sum() / max(_nflat, 1), int(_missed.sum())))
-
-    _pr = shp["pref_ratio"][_wf & (shp["shape_mode"] >= 1)]
-    if np.isfinite(_pr).any():
-        print("  Fitted preference ratio, cells given a preferred landmark: "
-              "median {:.2f}x (IQR {:.2f}-{:.2f}x).".format(
-                  float(np.nanmedian(_pr)),
-                  float(np.nanpercentile(_pr, 25)),
-                  float(np.nanpercentile(_pr, 75))))
+        _pr = shp["pref_ratio"][_wf & (shp["shape_mode"] >= 1)]
+        if np.isfinite(_pr).any():
+            print("  Fitted preference ratio, cells given a preferred landmark: "
+                  "median {:.2f}x (IQR {:.2f}-{:.2f}x).".format(
+                      float(np.nanmedian(_pr)),
+                      float(np.nanpercentile(_pr, 25)),
+                      float(np.nanpercentile(_pr, 75))))
+    else:
+        print(" -> Skipping shape templates (gain-only labeling).")
 
 
-    # one pure-behavior refit feeds both PDFs
     print(" -> Computing display tuning curves...")
     curves = _compute_display_curves(beh, Y_rate, XPB, cfg, scalePB=penPB)
+
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
 
     print(" -> Generating PDF of good cells...")
     plot_review_pdf(
         lad=lad, shp=shp, rel=rel, cfg=cfg, cell_ids=cell_ids, outdir=OUTDIR,
         wf=_wf, wf_kernel=_wf_kernel, curves=curves,
         shape_names=SHAPE_NAMES,
-        edge_cm=REL_REWARD_CM, start_cm=REL_ONSET_CM, reward_cm=REWARD_CM
+        edge_cm=REL_REWARD_CM, start_cm=REL_ONSET_CM, reward_cm=REWARD_CM,
+        stamp=stamp
     )
 
     print(" -> Generating PDF of excluded cells...")
     plot_excluded_pdf(
         lad=lad, rel=rel, cfg=cfg, cell_ids=cell_ids, outdir=OUTDIR,
         wf=_wf, curves=curves,
-        edge_cm=REL_REWARD_CM, start_cm=REL_ONSET_CM, reward_cm=REWARD_CM
+        edge_cm=REL_REWARD_CM, start_cm=REL_ONSET_CM, reward_cm=REWARD_CM,
+        stamp=stamp
     )
 
 
@@ -343,3 +348,10 @@ if __name__ == '__main__':
             suite2p_dir = os.path.join(logbase, 'suite2p/plane0')
 
             main(suite2p_dir, logfile, logbase)
+
+
+# python landmarkGLM/main.py --batch --batch_dir /home/dylan/Fast1/jasmine_glm/JSY054
+
+# python landmarkGLM/main.py -s2p /home/dylan/Fast1/jasmine_glm/JSY054/251105_JSY_JSY054_SpMod_Day7/suite2p/plane0 -vr /home/dylan/Fast1/jasmine_glm/JSY054/251105_JSY_JSY054_SpMod_Day7/VRlog_JSY054_11052025_03-36-34_forSharing.txt
+
+# python landmarkGLM/main.py -s2p /home/dylan/Fast1/jasmine_glm/JSY054/251031_JSY_JSY054_SpMod_Day2/suite2p/plane0 -vr /home/dylan/Fast1/jasmine_glm/JSY054/251031_JSY_JSY054_SpMod_Day2/VRlog_JSY054_10312025_06-08-26_forSharing.txt

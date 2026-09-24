@@ -26,6 +26,23 @@ def _fmt(v, spec="{:+.2f}", na="n/a"):
     return spec.format(v) if np.isfinite(v) else na
 
 
+def _pref_gates(G, j):
+
+    G = np.asarray(G, float)
+    j = np.asarray(j, int)
+    nc = G.shape[1]
+    nrm = np.sqrt(np.nansum(G ** 2, axis=0))
+    U = G / np.where(nrm < 1e-12, np.nan, nrm)[None, :]
+    margin = np.full(nc, np.nan)
+    d_pref = np.full(nc, np.nan)
+    for c in np.flatnonzero(j >= 0):
+        o = [k for k in range(G.shape[0]) if k != j[c]]
+        margin[c] = U[j[c], c] - np.nanmax(U[o, c])
+        d_pref[c] = G[j[c], c] - np.nanmean(G[o, c])
+
+    return margin, d_pref
+
+
 def _lap_stats(V, gix, nlap, nb, min_laps=3, return_laps=False):
 
     nc = V.shape[1]
@@ -266,50 +283,20 @@ def _draw_trace(a, cfg, xcm, raw, raw_se, color, edge_cm, start_cm, reward_cm):
 EXCLUDED_ROWS = 6
 EXCLUDED_COLS = 2
 
-EXCLUSION_REASONS = ["unreliable + poorly fit", "unreliable", "poorly fit"]
-EXCLUSION_COLORS = {
-    "unreliable + poorly fit": "#7f1d1d",
-    "unreliable": "#c0392b",
-    "poorly fit": "#d68910",
-}
-
-
-def exclusion_reasons(rel, lad, cfg, wf):
-
-    reliable = np.asarray(rel["ok"], bool)
-    fit_ok = np.asarray(lad["landmark_gains"], float) > cfg.r2_threshold
-
-    kept = reliable & fit_ok
-    if not np.array_equal(kept, np.asarray(wf, bool)):
-        raise RuntimeError("Exclusion rule no longer matches main.py well_fit "
-                           "({} vs {} kept) -- update exclusion_reasons.".format(
-                               int(kept.sum()), int(np.sum(wf))))
-
-    reasons = np.full(len(kept), "", dtype=object)
-    reasons[~reliable & ~fit_ok] = "unreliable + poorly fit"
-    reasons[~reliable & fit_ok] = "unreliable"
-    reasons[reliable & ~fit_ok] = "poorly fit"
-
-    return reasons
+EXCLUDED_COLOR = "#c0392b"
 
 
 def plot_excluded_pdf(lad, rel, cfg, cell_ids, outdir, wf, curves,
-                      edge_cm=124.5, start_cm=9.0, reward_cm=134.4):
+                      edge_cm=124.5, start_cm=9.0, reward_cm=134.4, stamp=None):
 
     xcm, CU, CU_se, RAW, RAW_se = curves[:5]
-    reasons = exclusion_reasons(rel, lad, cfg, wf)
-    excluded = np.flatnonzero(reasons != "")
-
-    rank = {r: i for i, r in enumerate(EXCLUSION_REASONS)}
+    excluded = np.flatnonzero(~np.asarray(wf, bool))
     r_rel = np.nan_to_num(np.asarray(rel["r"], float), nan=-np.inf)
-    order = sorted(excluded, key=lambda c: (rank[reasons[c]], -r_rel[c]))
-
-    counts = {r: int(np.sum(reasons == r)) for r in EXCLUSION_REASONS}
-    summary = "  |  ".join("{} {}".format(r, counts[r]) for r in EXCLUSION_REASONS)
+    order = sorted(excluded, key=lambda c: -r_rel[c])
     per_page = EXCLUDED_ROWS * EXCLUDED_COLS
     n_pages = int(np.ceil(len(order) / per_page))
-    pdf_path = os.path.join(outdir, "v09_excluded_cells.pdf")
-    r2_fit = np.asarray(lad["landmark_gains"], float)
+    pdf_path = os.path.join(outdir, "excluded_cells_{}.pdf".format(stamp)
+                            if stamp else "excluded_cells.pdf")
 
     with PdfPages(pdf_path) as pdf:
         for pg in tqdm(range(n_pages)):
@@ -331,24 +318,36 @@ def plot_excluded_pdf(lad, rel, cfg, cell_ids, outdir, wf, curves,
                     a.set_ylabel("rate", fontsize=6)
                 if k // EXCLUDED_COLS == EXCLUDED_ROWS - 1 or k + EXCLUDED_COLS >= len(sel):
                     a.set_xlabel("position (cm)", fontsize=6)
-                a.set_title("#{}  {}   rel r {:.2f}   fit R$^2$ {:+.3f}".format(
-                    int(cell_ids[i]), reasons[i], rel["r"][i], r2_fit[i]),
-                    fontsize=6.5, color=EXCLUSION_COLORS[reasons[i]], loc="left")
+                a.set_title("#{}   rel r {:.2f}".format(
+                    int(cell_ids[i]), rel["r"][i]),
+                    fontsize=6.5, color=EXCLUDED_COLOR, loc="left")
 
             pdf.savefig(fig)
             plt.close(fig)
 
-    print("  -> Wrote {} ({} excluded cells on {} pages: {})".format(
-        pdf_path, len(order), n_pages, summary))
+    print("  -> Wrote {} ({} excluded cells on {} pages)".format(
+        pdf_path, len(order), n_pages))
 
     return pdf_path
 
 
 def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
-                    shape_names=None, edge_cm=124.5, start_cm=9.0, reward_cm=134.4):
+                    shape_names=None, edge_cm=124.5, start_cm=9.0, reward_cm=134.4,
+                    stamp=None):
 
     if shape_names is None:
         shape_names = SHAPE_NAMES_DEFAULT
+
+    _has_shape = shp is not None
+    if not _has_shape:
+        _nc = len(cell_ids)
+        _nan = np.full(_nc, np.nan)
+        shp = dict(shape_dr2=_nan, shape_dr2_se=_nan, flat_dr2=_nan,
+                   flat_dr2_se=_nan, flat_z=_nan,
+                   shape_mode=np.zeros(_nc, int), shape_stability=_nan,
+                   r2=_nan, delta=_nan, sigma=_nan, pref_ratio=_nan,
+                   shape_runner_up=np.zeros(_nc, int),
+                   land_gain=np.full((4, _nc), np.nan))
 
     EDGE_CM   = edge_cm
     START_CM  = start_cm
@@ -391,29 +390,62 @@ def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
                        np.where(_mir_eq, "   = vs flat", ""))
     _z_gain  = lad["gain_z"]
 
-    _shape_j = np.where(wf, shp["shape_mode"] - 1, -99)
+    _shape_j = np.where(wf, shp["shape_mode"] - 1, -99)  # -1 = four equal peaks
     _gain_j  = np.asarray(lad["pref"], int)
-    _cmp     = wf & np.isfinite(_z_shape) & np.isfinite(_z_gain)
+    _r2_shape = np.asarray(shp["r2"], float)
+    _r2_gain  = np.asarray(lad["landmark_gains"], float)
+    _cmp     = wf & np.isfinite(_r2_shape) & np.isfinite(_r2_gain)
 
-    _margin_min = float(getattr(cfg, "shape_margin_min", 0.20))
     _dpref_min  = float(getattr(cfg, "pref_log_ratio_min", 0.25))
 
-    _Gs = np.sort(_G, axis=0)
-    _d_pref = _Gs[3] - np.nanmean(_Gs[:3], axis=0)
+    _compete = bool(getattr(cfg, "compete_template_vs_gain", False))
+    _rawmin = float(getattr(cfg, "min_raw_peak_ratio", 1.2))
+    _ident_src = str(getattr(cfg, "label_identity", "raw"))
+    _lsrc = str(getattr(cfg, "label_source", "gain"))
+    _dgain_min = float(getattr(cfg, "min_d_gain", 0.235))
 
-    _has_pref = (wf
-                 & (np.nan_to_num(lad["margin"], nan=0.0) >= _margin_min)
-                 & (np.nan_to_num(_d_pref, nan=0.0) >= _dpref_min))
+    _zin = [((_xcm >= z0) & (_xcm < z1)) for z0, z1 in cfg.zones]
+    with warnings.catch_warnings():
+        warnings.simplefilter("ignore", RuntimeWarning)
+        _zpk = np.array([np.nanmax(_RAW[m], axis=0) for m in _zin])   # (4, n)
+        _top = np.nanmax(_zpk, axis=0)
+    _fin4 = np.isfinite(_zpk).all(axis=0)
+    _raw_j = np.where(_fin4, np.argmax(np.nan_to_num(_zpk, nan=-np.inf), axis=0), -1)
+    _oth = (np.nansum(_zpk, axis=0) - np.nan_to_num(_top, nan=0.0)) / 3.0
+    with np.errstate(invalid="ignore", divide="ignore"):
+        _raw_ratio = np.where(_fin4 & (_top > 1e-9),
+                              _top / np.where(_oth > 1e-9, _oth, np.nan), np.nan)
+    _raw_ratio = np.where(_fin4 & (_top > 1e-9) & ~(_oth > 1e-9), np.inf, _raw_ratio)
 
-    _use_shape = (_shape_j >= 0) & (np.nan_to_num(_z_shape, nan=-np.inf)
-                                    >= np.nan_to_num(_z_gain, nan=-np.inf))
+    if _compete:
+        _use_shape = (np.nan_to_num(_r2_shape, nan=-np.inf)
+                      >= np.nan_to_num(_r2_gain, nan=-np.inf))
+    else:
+        _use_shape = np.zeros(len(wf), bool)     # gain fit names the landmark
     _ident_j = np.where(_use_shape, _shape_j, _gain_j)
+    if not _compete and _lsrc == "raw" and _ident_src == "raw":
+        _ident_j = _raw_j.copy()       # name the landmark the raw curve peaks at
+    _shape_flat = wf & _use_shape & (_shape_j == -1)
+
+    _G_gate = np.where(_use_shape[None, :], shp["land_gain"], _G)
+    _margin, _d_pref = _pref_gates(_G_gate, _ident_j)
+
+    # gain-only rule: the tallest zone has to stand min_raw_peak_ratio above
+    # the mean of the other three (NaN compares False, so it drops out)
+    if _compete:
+        _has_pref = (wf & (_ident_j >= 0)
+                     & (np.nan_to_num(_d_pref, nan=0.0) >= _dpref_min))
+    elif _lsrc == "raw":
+        _has_pref = wf & (_raw_ratio >= _rawmin) & (_ident_j >= 0)
+    else:
+        _has_pref = (wf & (_ident_j >= 0)
+                     & (np.nan_to_num(lad["d_gain"], nan=-np.inf) >= _dgain_min))
 
     _trace_agrees = _ident_j == _pk
-    if bool(getattr(cfg, "require_trace_agreement", True)):
-        _has_pref = _has_pref & _trace_agrees
 
     _cat_j = np.where(_has_pref, _ident_j, -1)
+
+    _, _dp_gain = _pref_gates(_G, _gain_j)
 
     _agree   = _cmp & (_shape_j == _gain_j)
     _dis     = _cmp & (_shape_j != _gain_j)
@@ -427,15 +459,13 @@ def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
     _arb[_win_shape] = "shape"
     _arb[_win_gain]  = "gain"
 
-    _f_margin = np.nan_to_num(lad["margin"], nan=0.0) < _margin_min
     _f_dpref  = np.nan_to_num(_d_pref, nan=0.0) < _dpref_min
-    _f_trace  = (~_trace_agrees) & bool(
-        getattr(cfg, "require_trace_agreement", True))
     for _i in np.flatnonzero(_floored):
-        _why = ([] if not _f_margin[_i] else ["margin"]) \
-             + ([] if not _f_dpref[_i]  else ["d_pref"]) \
-             + ([] if not _f_trace[_i]  else ["trace veto"])
-        _arb[_i] = " + ".join(_why) if _why else "floored"
+        if _shape_flat[_i]:
+            _arb[_i] = "shape (flat)"
+            continue
+        _arb[_i] = (("d_pref" if _f_dpref[_i] else "floored") if _compete
+                    else "d_gain / gain_z")
 
     _tmpl_shape = np.array(["unlabeled"] * len(wf), dtype=object)
     _tmpl_shape[wf] = np.array(shape_names, dtype=object)[shp["shape_mode"][wf]]
@@ -452,9 +482,15 @@ def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
     _is_reward = _is_edge & (_amp_rw > _amp_lm)
     _is_onset_only = _is_onset & ~_is_reward & (_amp_on > _amp_lm)
 
+    # reward / onset are flags layered on the category, not categories
     _label = _tmpl.copy()
-    _label[_is_onset_only] = "onset only"
-    _label[_is_reward]     = "reward only"
+
+    # adapting flags
+    _gd = np.diff(_G, axis=0)         # (3, n_cells)
+    with np.errstate(invalid="ignore"):
+        _is_visual = wf & (_label == shape_names[0])
+        _is_adapting = _is_visual & (_gd < 0).all(axis=0)       # L1>L2>L3>L4
+        _is_rev_adapting = _is_visual & (_gd > 0).all(axis=0)   # L1<L2<L3<L4
     _tj  = _shape_j
 
     _pstr = shp["pref_ratio"]
@@ -475,6 +511,8 @@ def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
         "arbitrated_by":      _arb,
         "is_reward":          _is_reward,
         "is_onset":           _is_onset_only,
+        "is_adapting":        _is_adapting,
+        "is_reverse_adapting": _is_rev_adapting,
         "amp_landmark":       _amp_lm,
         "amp_reward":         _amp_rw,
         "amp_onset":          _amp_on,
@@ -486,6 +524,9 @@ def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
         "max_gain":           _gmax,
         "well_fit_kernel":    wf_kernel,
         "argmax_gain":        np.where(wf, lad["pref"] + 1, -1),
+        "raw_peak_ratio":     _raw_ratio,
+        "raw_peak_zone":      np.where(_raw_j >= 0, np.array(_ZN, dtype=object)[
+                                  np.clip(_raw_j, 0, 3)], ""),
         "trace_peak_zone":    np.array(_ZN, dtype=object)[_pk],
         "trace_peak_cm":      _pk_pos,
         "track_peak_cm":      _gpk_pos,
@@ -498,7 +539,9 @@ def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
         "sign":               lad["sgn"],
         "adapt":              lad["adapt"],
         "quadratic":          lad["quadratic"],
-        "margin":             lad["margin"],
+        "margin":             _margin,
+        "gain_fit_margin":    lad["margin"],
+        "gate_source":        np.where(_use_shape, "shape", "gain"),
         "r2_comb":            lad["comb"],
         "r2_landmark_gains":  lad["landmark_gains"],
         "shape_dR2":          shp["shape_dr2"],
@@ -516,6 +559,12 @@ def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
         **{"gain_L{}".format(j + 1): _G[j] for j in range(4)},
         **{"prof_L{}".format(j + 1): lad["profile"][j] for j in range(4)},
     })[_shown].reset_index(drop=True)
+    if not _has_shape:
+        df9 = df9.drop(columns=[
+            "template_shape_search", "gate_source", "shape_stability",
+            "r2_shape", "shape_delta", "shape_sigma", "shape_pref_ratio",
+            "shape_dR2", "shape_dR2_se", "shape_flat_dR2", "shape_flat_dR2_se",
+            "shape_flat_z", "shape_runner_up", "shape_z", "r2_comb"])
     _csv = os.path.join(outdir, "v09_per_cell_full.csv")
     df9.to_csv(_csv, index=False)
     print("  -> Wrote {} ({} rows of {} cells; the {} that earn a PDF page)"
@@ -523,21 +572,23 @@ def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
 
     _wn = int(wf.sum())
 
-    _DISP  = {"four equal peaks": "all equal",
+    _DISP  = {"four equal peaks": "visual",
               "L1 preference": "L1-preferring",
               "L2 preference": "L2-preferring",
               "L3 preference": "L3-preferring",
               "L4 preference": "L4-preferring",
-              "onset only": "onset only",
-              "reward only": "reward only",
               "unlabeled": "unlabeled"}
     _SHORTC = dict(zip(shape_names,
                        plt.cm.tab10(np.linspace(0, 1, 10))[[7, 0, 2, 4, 1]]))
     _HDRC   = dict(zip(shape_names,
                        ["#555555", "#1f77b4", "#2ca02c", "#9467bd", "#ff7f0e"]))
-    _HDRC["onset only"]  = "#17becf"
-    _HDRC["reward only"] = "#7d3c98"
     _HDRC["unlabeled"]   = "#999999"
+
+    def _row(key, val):
+        return "{:<17s}{}".format(key, val)
+
+    def _tf(v):
+        return "true" if bool(v) else "false"
 
     def _tpage(pdf, body, title):
         f = plt.figure(figsize=(8.5, 11.0))
@@ -546,12 +597,58 @@ def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
         pdf.savefig(f)
         plt.close(f)
 
-    _cat   = np.where(_is_reward, 6,
-                      np.where(_is_onset_only, 5,
-                               np.where(wf, _cat_j + 1, 99)))
-    _order = np.lexsort((-np.abs(lad["drive"]), _pk, _cat))
+    _rel_r = np.nan_to_num(np.asarray(rel["r"], float), nan=-np.inf)
+    _order = np.argsort(-_rel_r, kind="stable")   # most reliable first
     _order = _order[_shown[_order]]
-    _PDF   = os.path.join(outdir, "v09_cell_review.pdf")
+    _PDF   = os.path.join(outdir, "good_cells_{}.pdf".format(stamp)
+                          if stamp else "good_cells.pdf")
+
+    def _info_rows(i):
+        rows = [_row("reliability", "{:.2f}{}".format(
+            rel["r"][i], "" if rel["ok"][i] else "  NOT RELIABLE")), ""]
+        if _compete:
+            rows += [
+                _row("best template",
+                     "shape-fit" if _use_shape[i] else "gain-fit"),
+                _row("template R^2", _fmt(_r2_shape[i], "{:.3f}")),
+                "",
+                _row("argmax(gains)",
+                     "none (all too similar)"
+                     if not np.nan_to_num(_dp_gain[i], nan=0.0) >= _dpref_min
+                     else "L{}  ({:.2f}x)".format(
+                         _gain_j[i] + 1, np.exp(_dp_gain[i]))),
+                _row("gain R^2", _fmt(_r2_gain[i], "{:.3f}")),
+                "",
+                _row("decision uses",
+                     "template" if _use_shape[i] else "gain"),
+                ""]
+        elif _lsrc == "raw":
+            rows += [
+                _row("raw peak ratio", "{}  (need {:.2f})".format(
+                    _fmt(np.minimum(_raw_ratio[i], 99.0), "{:.2f}"), _rawmin)),
+                _row("raw peak zone",
+                     "L{}".format(_raw_j[i] + 1) if _raw_j[i] >= 0 else "n/a"),
+                _row("argmax(gains)", "L{}  (gap {})".format(
+                    _gain_j[i] + 1, _fmt(lad["d_gain"][i], "{:+.2f}"))),
+                _row("gain R^2", _fmt(_r2_gain[i], "{:.3f}")),
+                ""]
+        else:
+            rows += [
+                _row("argmax(gains)", "{}  (gap {}, need {:.3f})".format(
+                    "L{}".format(_gain_j[i] + 1) if _has_pref[i] else "none",
+                    _fmt(lad["d_gain"][i], "{:+.2f}"), _dgain_min)),
+                _row("gain R^2", _fmt(_r2_gain[i], "{:.3f}")),
+                _row("raw peak ratio",
+                     _fmt(np.minimum(_raw_ratio[i], 99.0), "{:.2f}")),
+                _row("raw peak zone",
+                     "L{}".format(_raw_j[i] + 1) if _raw_j[i] >= 0 else "n/a"),
+                ""]
+        rows += [_row("adapting", _tf(_is_adapting[i])),
+                 _row("reverse adapting", _tf(_is_rev_adapting[i])),
+                 _row("onset", _tf(_is_onset_only[i])),
+                 _row("reward", _tf(_is_reward[i]))]
+
+        return rows
 
     with PdfPages(_PDF) as pdf:
         _np = int(np.ceil(_order.size / ROWS))
@@ -572,9 +669,6 @@ def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
 
                 if _gpk_bin[i] >= 0:
                     a.plot([_gpk_pos[i]], [_rw[_gpk_bin[i]]],
-                           marker="v", ms=3, color="0.35", clip_on=False)
-                if _pk_bin[i] >= 0:
-                    a.plot([_pk_pos[i]], [_rw[_pk_bin[i]]],
                            marker="v", ms=4, color="#c0392b", clip_on=False)
                 a.set_ylabel("rate", fontsize=6)
                 if r == ROWS - 1 or i == sel[-1]:
@@ -604,94 +698,19 @@ def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
                     (0, .88), 1, .13,
                     color=_HDRC.get(_label[i], "#555555"),
                     alpha=.9, transform=a.transAxes, lw=0))
-                _flag = ("   [edge ramp]"  if _is_edge[i]  else
-                         "   [onset ramp]" if _is_onset[i] else "")
                 a.text(.02, .945,
-                       "#{}   {}{}".format(int(cell_ids[i]),
-                                           _DISP.get(_label[i], _label[i]),
-                                           _flag),
+                       "#{}   {}".format(int(cell_ids[i]),
+                                         _DISP.get(_label[i], _label[i])),
                        transform=a.transAxes, fontsize=5.8,
                        color="w", va="center",
                        family="monospace", weight="bold")
-                a.text(.02, .84, "\n".join([
-                    "template   {}{}".format(
-                        _DISP.get(_tmpl_shape[i], _tmpl_shape[i]),
-                        "" if not np.isfinite(shp["pref_ratio"][i])
-                        else "  ({:.2f}x)".format(shp["pref_ratio"][i])),
-                    "  delta {}  sigma {}  stab {}  r2 {}".format(
-                        _fmt(shp["delta"][i], "{:+.1f}"),
-                        _fmt(shp["sigma"][i], "{:.1f}"),
-                        _fmt(shp["shape_stability"][i], "{:.2f}"),
-                        _fmt(shp["r2"][i], "{:+.3f}")),
-                    "reliab. r  {:.2f}  (full {:.2f}){}".format(
-                        rel["r"][i], rel["r_full"][i],
-                        "" if rel["ok"][i] else "   NOT RELIABLE"),
-                    "rel type   {}".format(rel["type"][i]),
-                    "pb removes {} track  {} zones".format(
-                        _fmt(100 * _PB["removed"][i], "{:.0f}%"),
-                        _fmt(100 * _PB["removed_zone"][i], "{:.0f}%")),
-                    "argmax(g)  L{}".format(lad["pref"][i] + 1),
-
-                    "adapt      {:+.3f}".format(lad["adapt"][i]),
- 
-                    "margin     {:.4f}  (unit g, floor {:.4f}){}".format(
-                        lad["margin"][i], _margin_min,
-                        "   BELOW" if np.nan_to_num(lad["margin"][i], nan=0.0)
-                        < _margin_min else ""),
-                    "d_pref     {:+.4f}  ({:.2f}x, floor {:.4f}){}".format(
-                        _d_pref[i], float(np.exp(_d_pref[i])), _dpref_min,
-                        "   BELOW" if np.nan_to_num(_d_pref[i], nan=0.0)
-                        < _dpref_min else ""),
-
-                    "trace      {}{}".format(
-                        "agrees" if _trace_agrees[i] else "DISAGREES",
-                        "" if _trace_agrees[i] else
-                        "  -- ident L{} ({}), trace {}".format(
-                            _ident_j[i] + 1,
-                            "shape" if _use_shape[i] else "gain",
-                            _ZN[_pk[i]])),
-                    "gates      {}".format(
-                        "all pass -- L{}".format(_cat_j[i] + 1)
-                        if _has_pref[i] else
-                        "FLAT, failed: " + ", ".join(
-                            ([] if np.nan_to_num(lad["margin"][i], nan=0.0)
-                             >= _margin_min else ["margin"])
-                            + ([] if np.nan_to_num(_d_pref[i], nan=0.0)
-                               >= _dpref_min else ["d_pref"])
-                            + ([] if _trace_agrees[i] else ["trace"]))),
-
-                    "dR2 shape  {:+.4f} +/-{:.4f}  (z {:+.1f}){}{}".format(
-                        shp["shape_dr2"][i], shp["shape_dr2_se"][i],
-                        _z_shape[i],
-                        "  <- chosen" if _win_shape[i] else "",
-                        _mirror[i]),
-                    "dGain      {:+.3f} +/-{:.3f}  (z {:+.1f}){}".format(
-                        _dgain[i], _dgain_se[i], _z_gain[i],
-                        "  <- chosen" if _win_gain[i] else ""),
-                    ]),
+                a.text(.02, .84, "\n".join(_info_rows(i)),
                     transform=a.transAxes, fontsize=5.4,
-                    family="monospace", va="top", linespacing=1.42)
+                    family="monospace", va="top", linespacing=1.17)
 
             pdf.savefig(fig)
             plt.close(fig)
 
     print("  -> Wrote {} (1 behavior page + {} cell pages)".format(_PDF, _np))
-    print("     EDGE-flagged  (peak past {:.0f} cm): {} of {} well-fit cells".format(
-        EDGE_CM, int((_is_edge & wf).sum()), _wn))
-    print("     ONSET-flagged (peak before {:.0f} cm): {} of {} well-fit cells".format(
-        START_CM, int((_is_onset & wf).sum()), _wn))
-    print("     LABEL FLOORS (margin {:.2f}, d_pref {:.2f}, trace veto {}): {} of {} "
-          "well-fit cells called flat, {} kept a preferred landmark".format(
-              _margin_min, _dpref_min,
-              "on" if bool(getattr(cfg, "require_trace_agreement", True)) else "off",
-              int(_floored.sum()), _wn, int(_has_pref.sum())))
-    print("     TRACE VETO: {} of {} well-fit cells name a landmark the raw trace "
-          "does not".format(int((wf & ~_trace_agrees).sum()), _wn))
-    print("     ARBITRATION: {} agree, {} disagree, shape {} / gain {}".format(
-        int(_agree.sum()), int(_dis.sum()),
-        int(_win_shape.sum()), int(_win_gain.sum())))
-    print("     END ZONES: {} reward, {} onset ({} of them not well_fit)".format(
-        int(_is_reward.sum()), int(_is_onset_only.sum()),
-        int(((_is_reward | _is_onset_only) & ~wf).sum())))
 
     return df9

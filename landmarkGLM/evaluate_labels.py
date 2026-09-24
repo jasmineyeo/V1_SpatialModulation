@@ -21,7 +21,7 @@ HAND_TO_NAME = {-1: "four equal peaks", 0: "four equal peaks",
                 4: "L4 preference", 5: "onset only", 6: "reward only"}
 
 CATS = ["four equal peaks", "L1 preference", "L2 preference", "L3 preference",
-        "L4 preference", "onset only", "reward only"]
+        "L4 preference"]
 
 SHORT = {"four equal peaks": "equal", "L1 preference": "L1",
          "L2 preference": "L2", "L3 preference": "L3", "L4 preference": "L4",
@@ -63,7 +63,8 @@ def load_pair(csv, labels, cellids=None):
 
 def score(pred, hand, title):
 
-    m = hand != UNLABELED
+    # onset/reward are flags now, not categories: hand 5/6 drop out of scoring
+    m = (hand != UNLABELED) & ~np.isin(hand, (5, 6))
     h = np.array([HAND_TO_NAME[int(v)] for v in hand[m]], dtype=object)
     p = np.asarray(pred, dtype=object)[m]
 
@@ -121,18 +122,14 @@ def score(pred, hand, title):
 
 def sweep_margin(D, hand, stat="margin", seed=0, n_folds=5):
 
-    m = hand != UNLABELED
+    m = (hand != UNLABELED) & ~np.isin(hand, (5, 6))
     h = np.array([HAND_TO_NAME[int(v)] for v in hand[m]], dtype=object)
     v = np.nan_to_num(np.asarray(D[stat], float)[m], nan=0.0)
 
     ag = np.asarray(D.argmax_gain, int)[m]
     ident = np.array([CATS[j] if 1 <= j <= 4 else "four equal peaks"
                       for j in ag], dtype=object)
-    end = np.zeros(len(h), dtype=object)
-    end[:] = ""
-    if "is_reward" in D.columns:
-        end[np.asarray(D.is_reward, bool)[m]] = "reward only"
-        end[np.asarray(D.is_onset, bool)[m]] = "onset only"
+    end = np.full(len(h), "", dtype=object)
 
     def _pred(thr, sel=None):
         p = np.where(v > thr, ident, "four equal peaks").astype(object)

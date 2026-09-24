@@ -48,7 +48,7 @@ def build_landmark_gains(beh, cfg, lagB):
                 [np.exp(-0.5 * ((pos - (m0 + dl)) / sg) ** 2) for m0 in centers])))
             par.append((float(dl), float(sg)))
 
-    return dict(X=X, par=par)
+    return dict(X=X, par=par, lagB=lagB)
 
 
 def shape_stats(gain_per_fold):
