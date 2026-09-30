@@ -18,7 +18,7 @@ from pure_behavior_block import build_behavior, build_purebehavior
 from candidate_kernels import build_candidates, fit_span, fit_span_mask
 from glm import _pick_lambda_PB, PoissonFold, _glm_pred, set_backend
 from build_landmark_gains import build_landmark_gains
-from fit_landmark_gains import fit_landmark_gains
+from fit_landmark_gains import fit_landmark_gains, gain_gap_null
 from template_matching import SHAPE_NAMES, build_shapes, fit_shapes
 from plots import _compute_display_curves, plot_review_pdf, plot_excluded_pdf
 from gui_funcs import select_directory, select_file
@@ -251,6 +251,23 @@ def main(SUITE2P, VRLOG, OUTDIR):
 
     _wf_kernel = np.asarray(rel["ok"], bool)
     _wf = _wf_kernel
+
+    # label threshold from shuffled activity: how big a gap does noise give?
+    if (not compete and getattr(cfg, "label_source", "gain") == "gain"
+            and getattr(cfg, "gain_gap_source", "null") == "null"):
+        print(" -> Building the gap null ({} shuffles of {} reliable cells)..."
+              .format(cfg.gain_null_shuffles, int(_wf.sum())))
+        _gnull = gain_gap_null(Y_rate, beh, cfg, XPB, cand, lgain_fam, penPB,
+                               LADDER_LAMBDAS, np.flatnonzero(_wf),
+                               n_shuffles=cfg.gain_null_shuffles,
+                               seed=cfg.rel_seed + 500)
+        lad["gap_null"] = _gnull
+        lad["gap_thr"] = float(np.nanpercentile(_gnull, cfg.gain_null_pct))
+        print("  gap threshold {:.3f} ({:.0f}th percentile of {} null gaps; "
+              "real median {:.3f})".format(
+                  lad["gap_thr"], cfg.gain_null_pct,
+                  int(np.isfinite(_gnull).sum()),
+                  float(np.nanmedian(lad["d_gain"][_wf]))))
 
 
     shp = None

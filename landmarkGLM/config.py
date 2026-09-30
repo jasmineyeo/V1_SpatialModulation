@@ -164,3 +164,8 @@ class Config:
     fixed_hyperparams_per_cell = True
 
     ridge_lambda = 10.0
+
+    # this can be 'null' or 'fixed'
+    gain_gap_source = "fixed"
+    gain_null_pct = 99.0
+    gain_null_shuffles = 5

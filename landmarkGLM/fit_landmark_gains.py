@@ -235,3 +235,26 @@ def fit_landmark_gains(Y, beh, cfg, XPB, cand, lgain_fam, scalePB=None,
     out.update(shape_stats(gains))
 
     return out
+
+
+def gain_gap_null(Y, beh, cfg, XPB, cand, lgain_fam, scalePB, LADDER_LAMBDAS,
+                  cells, n_shuffles=5, seed=0, verbose=True):
+    """ How big a top-landmark gap does noise alone produce?
+    """
+
+    Yc = np.asarray(Y, float)[:, cells]
+    nf, nc = Yc.shape
+    lo = int(round(cfg.rel_min_shift_s * cfg.fps))
+    rng = np.random.default_rng(seed)
+    out = np.full((n_shuffles, nc), np.nan)
+    for s in range(n_shuffles):
+        if verbose:
+            print("  Gap null: shuffle {} of {}...".format(s + 1, n_shuffles))
+        sh = rng.integers(lo, nf - lo, size=nc)
+        ix = (np.arange(nf)[:, None] - sh[None, :]) % nf
+        lad = fit_landmark_gains(np.take_along_axis(Yc, ix, axis=0), beh, cfg,
+                                 XPB, cand, lgain_fam, scalePB=scalePB,
+                                 verbose=False, LADDER_LAMBDAS=LADDER_LAMBDAS)
+        out[s] = lad["d_gain"]
+
+    return out

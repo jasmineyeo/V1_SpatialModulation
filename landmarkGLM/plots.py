@@ -402,7 +402,9 @@ def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
     _rawmin = float(getattr(cfg, "min_raw_peak_ratio", 1.2))
     _ident_src = str(getattr(cfg, "label_identity", "raw"))
     _lsrc = str(getattr(cfg, "label_source", "gain"))
-    _dgain_min = float(getattr(cfg, "min_d_gain", 0.235))
+
+    _dgain_min = float(lad["gap_thr"]) if "gap_thr" in lad else float(
+        getattr(cfg, "min_d_gain", 0.235))
 
     _zin = [((_xcm >= z0) & (_xcm < z1)) for z0, z1 in cfg.zones]
     with warnings.catch_warnings():
@@ -524,6 +526,7 @@ def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
         "max_gain":           _gmax,
         "well_fit_kernel":    wf_kernel,
         "argmax_gain":        np.where(wf, lad["pref"] + 1, -1),
+        "gap_threshold":      _dgain_min,
         "raw_peak_ratio":     _raw_ratio,
         "raw_peak_zone":      np.where(_raw_j >= 0, np.array(_ZN, dtype=object)[
                                   np.clip(_raw_j, 0, 3)], ""),
@@ -598,7 +601,10 @@ def plot_review_pdf(lad, shp, rel, cfg, cell_ids, outdir, wf, wf_kernel, curves,
         plt.close(f)
 
     _rel_r = np.nan_to_num(np.asarray(rel["r"], float), nan=-np.inf)
-    _order = np.argsort(-_rel_r, kind="stable")   # most reliable first
+
+    _cat = np.where(wf, _cat_j + 1, 99)
+    _sub = np.where(_is_adapting, 0, np.where(_is_rev_adapting, 1, 2))
+    _order = np.lexsort((-_rel_r, _sub, _cat))
     _order = _order[_shown[_order]]
     _PDF   = os.path.join(outdir, "good_cells_{}.pdf".format(stamp)
                           if stamp else "good_cells.pdf")
