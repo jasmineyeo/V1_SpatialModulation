@@ -103,7 +103,6 @@ def main(SUITE2P, VRLOG, OUTDIR):
                   LABELS)))
 
     print(" -> Plotting...")
-    plot_summary(res, cfg, os.path.join(OUTDIR, "gauss_summary_{}.png".format(stamp)))
     order = {k: i for i, k in enumerate(LABELS)}
     good = np.flatnonzero(res["good"])
     good = good[np.lexsort((-np.nan_to_num(res["rel_r"][good]),
@@ -151,5 +150,6 @@ if __name__ == '__main__':
 
             main(suite2p_dir, logfile, logbase)
 
+# python landmarkGauss/main.py --batch --batch_dir /home/dylan/Fast1/jasmine_glm/JSY054
 
 # python landmarkGauss/main.py -s2p /home/dylan/Fast1/jasmine_glm/JSY054/251105_JSY_JSY054_SpMod_Day7/suite2p/plane0 -vr /home/dylan/Fast1/jasmine_glm/JSY054/251105_JSY_JSY054_SpMod_Day7/VRlog_JSY054_11052025_03-36-34_forSharing.txt
